@@ -1,0 +1,42 @@
+{
+  "compilerOptions": {
+    /* File Layout */
+    "rootDir": "./",
+    "outDir": "./dist",
+
+      /* Module system */
+    "module": "commonjs",
+    "target": "es2020",
+    "moduleResolution": "node",
+
+    /* Interoperability */
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+
+    /* Node */
+    "lib": ["es2020"],
+    "types": ["node"],
+
+    /* Paths & global types */
+    "baseUrl": ".",
+
+    /* Outputs */
+    "sourceMap": true,
+
+    /* Type safety */
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+
+    /* Quality of life */
+   
+    "forceConsistentCasingInFileNames": true,
+    "skipLibCheck": true
+  },
+  "include": [
+    "**/*.ts",
+    "types.d.ts", "../frontend/schemas/auth.schema.ts",
+  
+  ],
+  "exclude": ["node_modules", "dist"]
+}
