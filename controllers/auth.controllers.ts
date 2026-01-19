@@ -3,6 +3,7 @@ import { Request, Response } from "express"
 import { prisma } from "../lib/prisma"
 import { comparePassword, hashPassword } from "../utils/password"
 import { generateRefreshToken, generateToken } from "../utils/auth"
+import { loginSchema } from "../schemas/user.schemas"
 import { AuthRequest } from "../types"
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
@@ -15,7 +16,11 @@ import { generateCode } from "../utils/generateCode"
  * @access  Public
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
-  const { email, password } = req.body
+  const parsed = loginSchema.parse(req.body)
+
+  const { email, password } = parsed
+  
+
 
   if (!email || !password) {
     res.status(400)
@@ -27,8 +32,8 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   })
 
   if (!user) {
-    res.status(401)
-    throw new Error("Nous n'avons pas pu trouver votre compte. Assurez vous d'etre inscrit")
+    res.status(404)
+    throw new Error("Compte innexistant ")
   }
 
 
@@ -128,7 +133,7 @@ export const logout = asyncHandler(async (req: AuthRequest, res: Response) => {
   await prisma.user.update({
   where : {id : req.user.id},
   data : {
-    lastLoginAt : new Date(0)
+    lastLoginAt : new Date()
   }
 })
   
@@ -434,12 +439,12 @@ export const sendCode = asyncHandler(async (req: AuthRequest, res: Response) => 
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
 
       <p style="font-size: 22px; font-weight: 500;">
-        Hello ${user.firstName},
+        Salut ${user.firstName},
       </p>
 
       <p style="font-size: 18px;">
-        Please use the code below to verify your email address and start
-        collaborating in <strong>PME</strong>.
+        Veuillez utiliser le code ci-dessous  vérifier votre adresse e-mail en vue de commencer
+à collaborer avec les administrateurs de  <strong>PME</strong>.
       </p>
 
       <p style="font-size: 26px; font-weight: bold; color: #002E3C; letter-spacing: 4px;">
@@ -447,7 +452,7 @@ export const sendCode = asyncHandler(async (req: AuthRequest, res: Response) => 
       </p>
 
       <p style="font-size: 16px;">
-        This code will expire in <strong>3 minutes</strong>, at
+        Ce code expirera dans <strong>3 minutes</strong>, à
         <span style="color: #002E3C; font-weight: 500;">
           ${expiresAt.toLocaleTimeString("fr-FR", {
             hour: "2-digit",
@@ -460,12 +465,12 @@ export const sendCode = asyncHandler(async (req: AuthRequest, res: Response) => 
     
 
       <p style="font-size: 14px; color: #555;">
-        If you’ve already verified your account, please ignore this email
-        or reach out to PME support if you have any concerns.
+        Si vous avez déjà vérifié votre compte, veuillez ignorer ce courriel.
+Ou contactez le support PME si vous avez des questions.
       </p>
 
       <p style="font-size: 12px; color: #999;">
-        — Bilsa Bank, the bank that fits in your pocket
+        — PME , Votre nuvelle plateforme de gestion de projet
       </p>
 
     </div>

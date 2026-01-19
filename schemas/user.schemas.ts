@@ -57,3 +57,15 @@ export const updateUserSchema = z.object({
     .boolean()
     .optional()
 })
+
+
+
+
+export const loginSchema = z.object({
+  email: z
+    .string()
+    .email("Adresse Email invalide"),
+  password: z
+    .string()
+    .min(6, "Le mot de passe devrait contenir au moins 6 characteres")
+})

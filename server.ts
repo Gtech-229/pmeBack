@@ -21,7 +21,7 @@ app.use(express.urlencoded({extended : false}))
 app.use(cookieParser());
 
 app.use(cors({
-  origin: process.env.NODE_ENV === 'production' ? "https : //my.frontendEndpoint" : "http://localhost:3000", 
+  origin: process.env.NODE_ENV === 'production' ? "http://31.207.38.123" : "http://localhost:3000", 
   credentials: true
 }))
 

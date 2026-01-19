@@ -3,24 +3,67 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.changePassword = exports.refreshToken = exports.getMe = exports.logout = exports.login = void 0;
+exports.verifyCode = exports.sendCode = exports.changePassword = exports.refreshToken = exports.getMe = exports.logout = exports.login = void 0;
 const express_async_handler_1 = __importDefault(require("express-async-handler"));
 const prisma_1 = require("../lib/prisma");
 const password_1 = require("../utils/password");
 const auth_1 = require("../utils/auth");
+const user_schemas_1 = require("../schemas/user.schemas");
 const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const sendEmail_1 = require("../utils/sendEmail");
+const generateCode_1 = require("../utils/generateCode");
 /**
  * @desc    Login user
  * @route   POST /api/auth/login
  * @access  Public
  */
 exports.login = (0, express_async_handler_1.default)(async (req, res) => {
-    const { email, password } = req.body;
+    const parsed = user_schemas_1.loginSchema.parse(req.body);
+    const { email, password } = parsed;
     if (!email || !password) {
         res.status(400);
         throw new Error("Email and password are required");
     }
-    res.json({ msg: 'Connected succesfully', email });
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { email }
+    });
+    if (!user) {
+        res.status(404);
+        throw new Error("Compte innexistant ");
+    }
+    const isMatch = await (0, password_1.comparePassword)(password, user.passwordHash);
+    if (!isMatch) {
+        res.status(401);
+        throw new Error("Mot de passe incorrect");
+    }
+    const token = (0, auth_1.generateToken)({
+        id: user.id,
+        role: user.role
+    });
+    const refreshTkn = (0, auth_1.generateRefreshToken)(user.id);
+    const hashedToken = await (0, password_1.hashPassword)(refreshTkn);
+    await prisma_1.prisma.refreshToken.create({
+        data: {
+            token: hashedToken,
+            userId: user.id,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+        }
+    });
+    // Set refresh token in httpOnly cookie
+    res.cookie("refreshToken", refreshTkn, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV !== 'development',
+        sameSite: "strict",
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+    res.cookie("jwt", token, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === "production",
+        sameSite: "strict",
+        maxAge: 15 * 60 * 1000 //15m
+    });
+    res.json({ msg: 'Connected succesfully' });
 });
 /**
  * @desc    Logout user
@@ -28,25 +71,37 @@ exports.login = (0, express_async_handler_1.default)(async (req, res) => {
  * @access  Private
  */
 exports.logout = (0, express_async_handler_1.default)(async (req, res) => {
+    if (!req.user?.id) {
+        res.status(401);
+        throw new Error('You must be connected');
+    }
     const refreshTokenPlain = req.cookies.refreshToken;
-    if (refreshTokenPlain) {
-        const tokens = await prisma_1.prisma.refreshToken.findMany({
-            where: {
-                revokedAt: null,
-                expiresAt: { gt: new Date() }
-            }
-        });
-        for (const token of tokens) {
-            const isMatch = await (0, password_1.comparePassword)(refreshTokenPlain, token.token);
-            if (isMatch) {
-                await prisma_1.prisma.refreshToken.update({
-                    where: { id: token.id },
-                    data: { revokedAt: new Date() }
-                });
-                break;
-            }
+    if (!refreshTokenPlain) {
+        res.status(401);
+        throw new Error('User not authentificated');
+    }
+    const tokens = await prisma_1.prisma.refreshToken.findMany({
+        where: {
+            revokedAt: null,
+            expiresAt: { gt: new Date() }
+        }
+    });
+    for (const token of tokens) {
+        const isMatch = await (0, password_1.comparePassword)(refreshTokenPlain, token.token);
+        if (isMatch) {
+            await prisma_1.prisma.refreshToken.update({
+                where: { id: token.id },
+                data: { revokedAt: new Date() }
+            });
+            break;
         }
     }
+    await prisma_1.prisma.user.update({
+        where: { id: req.user.id },
+        data: {
+            lastLoginAt: new Date(0)
+        }
+    });
     // Supprimer les cookies
     res.clearCookie("refreshToken", {
         httpOnly: true,
@@ -78,9 +133,9 @@ exports.getMe = (0, express_async_handler_1.default)(async (req, res) => {
             firstName: true,
             lastName: true,
             role: true,
-            isActive: true,
             createdAt: true,
-            lastLoginAt: true
+            lastLoginAt: true,
+            isActive: true
         }
     });
     if (!user) {
@@ -133,11 +188,12 @@ exports.refreshToken = (0, express_async_handler_1.default)(async (req, res) => 
     const user = await prisma_1.prisma.user.findUnique({
         where: { id: decoded.id }
     });
-    if (!user || !user.isActive) {
+    if (!user) {
         res.status(401);
         throw new Error("User not found or inactive");
     }
-    // 5️⃣ Rotation du refresh token (sécurité)
+    // !user.isActive
+    // Rotation du refresh token (sécurité)
     await prisma_1.prisma.refreshToken.update({
         where: { id: matchedToken.id },
         data: { revokedAt: new Date() }
@@ -194,20 +250,20 @@ exports.changePassword = (0, express_async_handler_1.default)(async (req, res) =
         res.status(404);
         throw new Error("User not found");
     }
-    // 🔐 Vérifier l'ancien mot de passe
+    //  Vérifier l'ancien mot de passe
     const isMatch = await (0, password_1.comparePassword)(currentPassword, user.passwordHash);
     if (!isMatch) {
         res.status(401);
         throw new Error("Current password is incorrect");
     }
-    // 🔐 Hasher le nouveau mot de passe
+    //  Hasher le nouveau mot de passe
     const newHashedPassword = await (0, password_1.hashPassword)(newPassword);
-    // 🔄 Update password
+    //  Update password
     await prisma_1.prisma.user.update({
         where: { id: userId },
         data: { passwordHash: newHashedPassword }
     });
-    // 🔥 Invalider TOUS les refresh tokens
+    //  Invalider TOUS les refresh tokens
     await prisma_1.prisma.refreshToken.updateMany({
         where: {
             userId,
@@ -219,6 +275,138 @@ exports.changePassword = (0, express_async_handler_1.default)(async (req, res) =
     });
     res.status(200).json({
         message: "Password updated successfully"
+    });
+});
+/**
+ * @description Send verification code
+ * @Route POST/auth/send-code
+ * @access Private
+ * **/
+exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
+    if (!req.user?.id) {
+        res.status(401);
+        throw new Error('Not authenticated');
+    }
+    // Récupérer l’utilisateur
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: req.user.id },
+    });
+    if (user?.verificationCode &&
+        user.codeExpires &&
+        user.codeExpires.getTime() > Date.now()) {
+        throw new Error("Un code est deja generer, saisissez le ou patientez");
+    }
+    const { email } = req.body;
+    if (!email) {
+        res.status(400);
+        throw new Error('Email is required');
+    }
+    const code = (0, generateCode_1.generateCode)(6);
+    //  Hasher le code
+    const hashedCode = await bcryptjs_1.default.hash(code, 10);
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+    //  Définir expiration (3 minutes)
+    const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
+    //  Sauvegarder le code
+    await prisma_1.prisma.user.update({
+        where: { id: user.id },
+        data: {
+            verificationCode: hashedCode,
+            codeExpires: expiresAt,
+            codeIsVerified: false
+        },
+    });
+    // Send resend code
+    await (0, sendEmail_1.sendEmail)({
+        to: "gtech229egn@gmail.com",
+        subject: "Account validation",
+        html: `
+    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
+
+      <p style="font-size: 22px; font-weight: 500;">
+        Hello ${user.firstName},
+      </p>
+
+      <p style="font-size: 18px;">
+        Please use the code below to verify your email address and start
+        collaborating in <strong>PME</strong>.
+      </p>
+
+      <p style="font-size: 26px; font-weight: bold; color: #002E3C; letter-spacing: 4px;">
+        ${code}
+      </p>
+
+      <p style="font-size: 16px;">
+        This code will expire in <strong>3 minutes</strong>, at
+        <span style="color: #002E3C; font-weight: 500;">
+          ${expiresAt.toLocaleTimeString("fr-FR", {
+            hour: "2-digit",
+            minute: "2-digit",
+            hour12: false,
+        })}
+        </span>.
+      </p>
+
+    
+
+      <p style="font-size: 14px; color: #555;">
+        If you’ve already verified your account, please ignore this email
+        or reach out to PME support if you have any concerns.
+      </p>
+
+      <p style="font-size: 12px; color: #999;">
+        — Bilsa Bank, the bank that fits in your pocket
+      </p>
+
+    </div>
+  `
+    });
+    // 7️⃣ Réponse frontend
+    res.status(200).json({
+        message: 'Verification code sent',
+    });
+});
+exports.verifyCode = (0, express_async_handler_1.default)(async (req, res) => {
+    if (!req.user?.id) {
+        throw new Error('Utiliisateur non connecter');
+    }
+    const { email, code } = req.body;
+    if (!email || !code) {
+        res.status(400);
+        throw new Error("Email et code requis");
+    }
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: req.user?.id },
+    });
+    if (!user || !user.verificationCode || !user.codeExpires) {
+        res.status(400);
+        throw new Error("Code inexistant");
+    }
+    // ⏱ Vérification expiration
+    if (user.codeExpires < new Date()) {
+        res.status(400);
+        throw new Error("Code expiré");
+    }
+    //  Hash du code fourni
+    const isMatched = await bcryptjs_1.default.compare(code, user.verificationCode);
+    if (!isMatched) {
+        throw new Error('Code incorrect');
+    }
+    // Validation du compte
+    await prisma_1.prisma.user.update({
+        where: { id: user.id },
+        data: {
+            verificationCode: null,
+            codeIsVerified: true,
+            codeExpires: null,
+        },
+    });
+    res.status(200).json({
+        success: true,
+        message: "Email vérifié avec succès",
     });
 });
 //# sourceMappingURL=auth.controllers.js.map

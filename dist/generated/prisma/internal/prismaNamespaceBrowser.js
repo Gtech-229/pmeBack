@@ -48,7 +48,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NullsOrder = exports.QueryMode = exports.SortOrder = exports.SubStepScalarFieldEnum = exports.ProjectScalarFieldEnum = exports.PMEScalarFieldEnum = exports.RefreshTokenScalarFieldEnum = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
+exports.NullsOrder = exports.QueryMode = exports.SortOrder = exports.ReportDocumentScalarFieldEnum = exports.ReportSignatureScalarFieldEnum = exports.MeetingProjectDecisionScalarFieldEnum = exports.MeetingReportScalarFieldEnum = exports.MeetingPresenceScalarFieldEnum = exports.CommitteeMeetingScalarFieldEnum = exports.CommitteeMemberScalarFieldEnum = exports.CommitteeScalarFieldEnum = exports.SubStepScalarFieldEnum = exports.ActivityScalarFieldEnum = exports.DocumentScalarFieldEnum = exports.ProjectScalarFieldEnum = exports.PMEScalarFieldEnum = exports.RefreshTokenScalarFieldEnum = exports.RelationLoadStrategy = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
 const runtime = __importStar(require("@prisma/client/runtime/index-browser"));
 exports.Decimal = runtime.Decimal;
 exports.NullTypes = {
@@ -79,7 +79,17 @@ exports.ModelName = {
     RefreshToken: 'RefreshToken',
     PME: 'PME',
     Project: 'Project',
-    SubStep: 'SubStep'
+    Document: 'Document',
+    Activity: 'Activity',
+    SubStep: 'SubStep',
+    Committee: 'Committee',
+    CommitteeMember: 'CommitteeMember',
+    CommitteeMeeting: 'CommitteeMeeting',
+    MeetingPresence: 'MeetingPresence',
+    MeetingReport: 'MeetingReport',
+    MeetingProjectDecision: 'MeetingProjectDecision',
+    ReportSignature: 'ReportSignature',
+    ReportDocument: 'ReportDocument'
 };
 /*
  * Enums
@@ -102,7 +112,15 @@ exports.UserScalarFieldEnum = {
     failedLogins: 'failedLogins',
     isLocked: 'isLocked',
     createdAt: 'createdAt',
-    updatedAt: 'updatedAt'
+    updatedAt: 'updatedAt',
+    validatedAt: 'validatedAt',
+    verificationCode: 'verificationCode',
+    codeExpires: 'codeExpires',
+    codeIsVerified: 'codeIsVerified'
+};
+exports.RelationLoadStrategy = {
+    query: 'query',
+    join: 'join'
 };
 exports.RefreshTokenScalarFieldEnum = {
     id: 'id',
@@ -115,7 +133,20 @@ exports.RefreshTokenScalarFieldEnum = {
 exports.PMEScalarFieldEnum = {
     id: 'id',
     name: 'name',
+    type: 'type',
+    size: 'size',
+    description: 'description',
     email: 'email',
+    phone: 'phone',
+    website: 'website',
+    logoUrl: 'logoUrl',
+    logoId: 'logoId',
+    address: 'address',
+    city: 'city',
+    country: 'country',
+    userRole: 'userRole',
+    ownerId: 'ownerId',
+    isActive: 'isActive',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
@@ -129,9 +160,32 @@ exports.ProjectScalarFieldEnum = {
     fundedAmount: 'fundedAmount',
     fundDisbursementDates: 'fundDisbursementDates',
     validatedAt: 'validatedAt',
+    credit: 'credit',
+    hasCredit: 'hasCredit',
     submissionDate: 'submissionDate',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
+};
+exports.DocumentScalarFieldEnum = {
+    id: 'id',
+    title: 'title',
+    fileUrl: 'fileUrl',
+    publicId: 'publicId',
+    mimeType: 'mimeType',
+    size: 'size',
+    projectId: 'projectId',
+    createdAt: 'createdAt'
+};
+exports.ActivityScalarFieldEnum = {
+    id: 'id',
+    type: 'type',
+    title: 'title',
+    message: 'message',
+    pmeId: 'pmeId',
+    projectId: 'projectId',
+    userId: 'userId',
+    isRead: 'isRead',
+    createdAt: 'createdAt'
 };
 exports.SubStepScalarFieldEnum = {
     id: 'id',
@@ -144,6 +198,69 @@ exports.SubStepScalarFieldEnum = {
     projectId: 'projectId',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
+};
+exports.CommitteeScalarFieldEnum = {
+    id: 'id',
+    name: 'name',
+    description: 'description',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.CommitteeMemberScalarFieldEnum = {
+    id: 'id',
+    committeeId: 'committeeId',
+    userId: 'userId',
+    memberRole: 'memberRole',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.CommitteeMeetingScalarFieldEnum = {
+    id: 'id',
+    committeeId: 'committeeId',
+    date: 'date',
+    startTime: 'startTime',
+    endTime: 'endTime',
+    location: 'location',
+    status: 'status',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.MeetingPresenceScalarFieldEnum = {
+    id: 'id',
+    meetingId: 'meetingId',
+    memberId: 'memberId',
+    createdAt: 'createdAt'
+};
+exports.MeetingReportScalarFieldEnum = {
+    id: 'id',
+    meetingId: 'meetingId',
+    status: 'status',
+    otherDecisions: 'otherDecisions',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.MeetingProjectDecisionScalarFieldEnum = {
+    id: 'id',
+    reportId: 'reportId',
+    projectId: 'projectId',
+    decision: 'decision',
+    note: 'note',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.ReportSignatureScalarFieldEnum = {
+    id: 'id',
+    reportId: 'reportId',
+    memberId: 'memberId',
+    signedAt: 'signedAt'
+};
+exports.ReportDocumentScalarFieldEnum = {
+    id: 'id',
+    reportId: 'reportId',
+    label: 'label',
+    fileUrl: 'fileUrl',
+    publicId: 'publicId',
+    createdAt: 'createdAt'
 };
 exports.SortOrder = {
     asc: 'asc',

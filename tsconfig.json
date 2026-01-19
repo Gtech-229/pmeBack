@@ -35,7 +35,7 @@
   },
   "include": [
     "**/*.ts",
-    "types.d.ts", "../frontend/schemas/auth.schema.ts",
+    "types.d.ts",
   
   ],
   "exclude": ["node_modules", "dist"]

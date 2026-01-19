@@ -9,12 +9,19 @@
 * 🟢 You can import this file directly.
 */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.SubStepState = exports.ProjectStatus = exports.Role = void 0;
+exports.ReportStatus = exports.MeetingStatus = exports.CommitteeDecision = exports.CommitteeRole = exports.PMEType = exports.PMESize = exports.SubStepState = exports.ProjectStatus = exports.ActivityType = exports.Role = void 0;
 exports.Role = {
     SUPER_ADMIN: 'SUPER_ADMIN',
     ADMIN: 'ADMIN',
     PME: 'PME',
     FINANCIER: 'FINANCIER'
+};
+exports.ActivityType = {
+    WELCOME: 'WELCOME',
+    PROJECT_CREATED: 'PROJECT_CREATED',
+    PROJECT_APPROVED: 'PROJECT_APPROVED',
+    PROJECT_REJECTED: 'PROJECT_REJECTED',
+    ACCOUNT_VERIFIED: 'ACCOUNT_VERIFIED'
 };
 exports.ProjectStatus = {
     pending: 'pending',
@@ -22,12 +29,43 @@ exports.ProjectStatus = {
     rejected: 'rejected',
     funded: 'funded',
     completed: 'completed',
-    failed: 'failed'
+    failed: 'failed',
+    suspended: 'suspended'
 };
 exports.SubStepState = {
     pending: 'pending',
     in_progress: 'in_progress',
     validated: 'validated',
     failed: 'failed'
+};
+exports.PMESize = {
+    small: 'small',
+    middle: 'middle'
+};
+exports.PMEType = {
+    non_profit: 'non_profit',
+    for_profit: 'for_profit'
+};
+exports.CommitteeRole = {
+    president: 'president',
+    vice_president: 'vice_president',
+    member: 'member',
+    secretary: 'secretary'
+};
+exports.CommitteeDecision = {
+    approved: 'approved',
+    rejected: 'rejected',
+    suspended: 'suspended'
+};
+exports.MeetingStatus = {
+    PROGRAMMED: 'PROGRAMMED',
+    ONGOING: 'ONGOING',
+    FINISHED: 'FINISHED',
+    POSTPONED: 'POSTPONED',
+    CANCELED: 'CANCELED'
+};
+exports.ReportStatus = {
+    DRAFT: 'DRAFT',
+    APPLIED: 'APPLIED'
 };
 //# sourceMappingURL=enums.js.map

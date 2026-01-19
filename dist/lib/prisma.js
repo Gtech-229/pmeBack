@@ -12,7 +12,6 @@ const connectionString = `${process.env.DATABASE_URL}`;
 if (!connectionString) {
     throw new Error("DATABASE_URL is not defined in .env");
 }
-console.log(process.env.DATABASE_URL);
 const adapter = new adapter_neon_1.PrismaNeon({ connectionString });
 exports.prisma = new client_1.PrismaClient({ adapter });
 //# sourceMappingURL=prisma.js.map

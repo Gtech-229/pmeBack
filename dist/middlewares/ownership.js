@@ -8,7 +8,6 @@ const requireOwnershipOrRole = (...allowedRoles) => {
         }
         const isOwner = req.user.id === req.params.id;
         const hasRole = allowedRoles.includes(req.user.role);
-        //  console.log(req.params.id)
         if (!isOwner && !hasRole) {
             return res.status(403).json({
                 message: "Forbidden: not owner or insufficient role"
