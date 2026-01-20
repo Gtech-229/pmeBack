@@ -20,6 +20,8 @@ app.use(express.json())
 app.use(express.urlencoded({extended : false}))
 app.use(cookieParser());
 
+
+
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? ["https://suivi-mp.com", "https://admin.suivi-mp.com"]
   : ["http://localhost:3000"];
