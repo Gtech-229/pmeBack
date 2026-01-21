@@ -10,7 +10,7 @@ router.post("/refresh", refreshToken)
 router.post("/logout",requireAuth, logout)
 router.get('/me',requireAuth,getMe);
 router.put('/change-password',verifyAccessToken ,changePassword)
-router.post('/send-code',createRateLimiter(10,3),requireAuth,sendCode);
+router.post('/send-code',createRateLimiter(10,2),requireAuth,sendCode);
 router.post('/verify-code',requireAuth,verifyCode);
 
 
