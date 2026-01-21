@@ -6,6 +6,7 @@ const enums_1 = require("../generated/prisma/enums");
 const requireAuth_1 = require("../middlewares/requireAuth");
 const rbac_1 = require("../middlewares/rbac");
 const ownership_1 = require("../middlewares/ownership");
+const ratelimit_1 = require("../middlewares/ratelimit");
 const router = (0, express_1.Router)();
 // Every route require the authentification
 // router.use(requireAuth)
@@ -16,7 +17,7 @@ router
     .delete((0, rbac_1.requireRole)(enums_1.Role.SUPER_ADMIN), user_controllers_1.deleteUser);
 router
     .route("/")
-    .post(user_controllers_1.createUser)
+    .post((0, ratelimit_1.createRateLimiter)(3, 1), user_controllers_1.createUser)
     .get(requireAuth_1.requireAuth, (0, rbac_1.requireRole)(enums_1.Role.ADMIN, enums_1.Role.SUPER_ADMIN), user_controllers_1.getUsers);
 exports.default = router;
 //# sourceMappingURL=user.routes.js.map

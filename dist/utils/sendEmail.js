@@ -6,8 +6,8 @@ const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
 const sendEmail = async ({ to, subject, html, text, }) => {
     try {
         const payload = {
-            from: process.env.RESEND_FROM,
-            to,
+            from: process.env.NODE_ENV === 'production' ? process.env.RESEND_FROM : "Acme <onboarding@resend.dev>",
+            to: process.env.NODE_ENV === 'production' ? to : 'gtech229egn@gmail.com',
             subject,
             html,
             ...(text ? { text } : {}),

@@ -321,7 +321,7 @@ exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
     });
     // Send resend code
     await (0, sendEmail_1.sendEmail)({
-        to: "gtech229egn@gmail.com",
+        to: `${user.email}`,
         subject: "Account validation",
         html: `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">

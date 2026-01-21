@@ -16,10 +16,12 @@ const pme_routes_1 = __importDefault(require("./routes/pme.routes"));
 const activities_routes_1 = __importDefault(require("./routes/activities.routes"));
 const committee_route_1 = __importDefault(require("./routes/committee.route"));
 const dashboard_route_1 = __importDefault(require("./routes/dashboard.route"));
+const ratelimit_1 = require("./middlewares/ratelimit");
 // Initialisations
 dotenv_1.default.config();
 const port = process.env.PORT || 3000;
 const app = (0, express_1.default)();
+app.set("trust proxy", 1);
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: false }));
 app.use((0, cookie_parser_1.default)());
@@ -39,6 +41,7 @@ app.use((0, cors_1.default)({
     },
     credentials: true
 }));
+app.use((0, ratelimit_1.createRateLimiter)(1000, 15));
 app.use("/api/auth", auth_routes_1.default);
 app.use("/api/users", user_routes_1.default);
 app.use("/api/projects", project_routes_1.default);
