@@ -11,10 +11,12 @@ import pmeRoutes from './routes/pme.routes'
 import activitiesRoutes from './routes/activities.routes'
 import committeeRoutes from './routes/committee.route'
 import dashboardRoutes from './routes/dashboard.route'
+import { createRateLimiter } from "./middlewares/ratelimit";
 // Initialisations
 dotenv.config()
 const port = process.env.PORT || 3000
 const app = express();
+app.set("trust proxy", 1)
 
 app.use(express.json())
 app.use(express.urlencoded({extended : false}))
@@ -40,6 +42,7 @@ app.use(cors({
 }));
 
 
+app.use(createRateLimiter(1000, 15));
 
 app.use("/api/auth", authRoutes)
 app.use("/api/users", userRoutes)

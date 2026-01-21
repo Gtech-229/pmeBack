@@ -10,6 +10,7 @@ import { Role } from "../generated/prisma/enums"
 import { requireAuth } from "../middlewares/requireAuth"
 import { requireRole } from "../middlewares/rbac"
 import { requireOwnershipOrRole } from "../middlewares/ownership"
+import { createRateLimiter } from "../middlewares/ratelimit"
 const router = Router()
 // Every route require the authentification
 // router.use(requireAuth)
@@ -22,7 +23,7 @@ router
 
 router
   .route("/")
-  .post( createUser)
+  .post(createRateLimiter(3,1), createUser)
   .get(requireAuth,requireRole(Role.ADMIN, Role.SUPER_ADMIN),getUsers)
 
 

@@ -17,8 +17,8 @@ export const sendEmail = async ({
 }: SendEmailParams) => {
   try {
      const payload = {
-    from: process.env.RESEND_FROM!,
-    to,
+    from: process.env.NODE_ENV === 'production' ? process.env.RESEND_FROM! : "Acme <onboarding@resend.dev>",
+    to : process.env.NODE_ENV === 'production' ? to : 'gtech229egn@gmail.com',
     subject,
     html,
     ...(text ? { text } : {}),

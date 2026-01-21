@@ -433,7 +433,7 @@ export const sendCode = asyncHandler(async (req: AuthRequest, res: Response) => 
   
   // Send resend code
   await sendEmail({
-  to: "gtech229egn@gmail.com",
+  to: `${user.email}`,
   subject: "Account validation",
    html: `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">

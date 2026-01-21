@@ -3,14 +3,14 @@ import { login, logout, getMe, refreshToken , changePassword,sendCode, verifyCod
 import { requireAuth } from "../middlewares/requireAuth"
 import { verifyAccessToken } from "../utils/auth"
 import { requireOwnershipOrRole } from "../middlewares/ownership"
-
+import { createRateLimiter } from "../middlewares/ratelimit"
 const router = Router()
-router.post("/login", login)
+router.post("/login",createRateLimiter(5,1), login)
 router.post("/refresh", refreshToken)
 router.post("/logout",requireAuth, logout)
 router.get('/me',requireAuth,getMe);
 router.put('/change-password',verifyAccessToken ,changePassword)
-router.post('/send-code',requireAuth,sendCode);
+router.post('/send-code',createRateLimiter(1,2),requireAuth,sendCode);
 router.post('/verify-code',requireAuth,verifyCode);
 
 
