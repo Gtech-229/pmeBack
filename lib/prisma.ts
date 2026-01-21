@@ -17,6 +17,7 @@ declare global {
 
 const connectionString = process.env.DATABASE_URL;
 
+
 if (!connectionString) {
   throw new Error("DATABASE_URL is not defined in .env");
 }
@@ -28,4 +29,4 @@ const prisma = global.prisma || new PrismaClient({ adapter });
 
 if (process.env.NODE_ENV === 'development') global.prisma = prisma;
 
-export  {prisma};
+export {prisma};

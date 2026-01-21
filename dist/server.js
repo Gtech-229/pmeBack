@@ -23,8 +23,20 @@ const app = (0, express_1.default)();
 app.use(express_1.default.json());
 app.use(express_1.default.urlencoded({ extended: false }));
 app.use((0, cookie_parser_1.default)());
+const allowedOrigins = process.env.NODE_ENV === 'production'
+    ? ["https://suivi-mp.com", "https://admin.suivi-mp.com"]
+    : ["http://localhost:3000"];
 app.use((0, cors_1.default)({
-    origin: process.env.NODE_ENV === 'production' ? "http://31.207.38.123" : "http://localhost:3000",
+    origin: function (origin, callback) {
+        // autoriser les requêtes sans origin (ex: Postman)
+        if (!origin)
+            return callback(null, true);
+        if (allowedOrigins.indexOf(origin) === -1) {
+            const msg = 'The CORS policy for this site does not allow access from the specified Origin.';
+            return callback(new Error(msg), false);
+        }
+        return callback(null, true);
+    },
     credentials: true
 }));
 app.use("/api/auth", auth_routes_1.default);

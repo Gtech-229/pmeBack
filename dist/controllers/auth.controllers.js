@@ -99,7 +99,7 @@ exports.logout = (0, express_async_handler_1.default)(async (req, res) => {
     await prisma_1.prisma.user.update({
         where: { id: req.user.id },
         data: {
-            lastLoginAt: new Date(0)
+            lastLoginAt: new Date()
         }
     });
     // Supprimer les cookies
@@ -327,12 +327,12 @@ exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
 
       <p style="font-size: 22px; font-weight: 500;">
-        Hello ${user.firstName},
+        Salut ${user.firstName},
       </p>
 
       <p style="font-size: 18px;">
-        Please use the code below to verify your email address and start
-        collaborating in <strong>PME</strong>.
+        Veuillez utiliser le code ci-dessous  vérifier votre adresse e-mail en vue de commencer
+à collaborer avec les administrateurs de  <strong>PME</strong>.
       </p>
 
       <p style="font-size: 26px; font-weight: bold; color: #002E3C; letter-spacing: 4px;">
@@ -340,7 +340,7 @@ exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
       </p>
 
       <p style="font-size: 16px;">
-        This code will expire in <strong>3 minutes</strong>, at
+        Ce code expirera dans <strong>3 minutes</strong>, à
         <span style="color: #002E3C; font-weight: 500;">
           ${expiresAt.toLocaleTimeString("fr-FR", {
             hour: "2-digit",
@@ -353,12 +353,12 @@ exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
     
 
       <p style="font-size: 14px; color: #555;">
-        If you’ve already verified your account, please ignore this email
-        or reach out to PME support if you have any concerns.
+        Si vous avez déjà vérifié votre compte, veuillez ignorer ce courriel.
+Ou contactez le support PME si vous avez des questions.
       </p>
 
       <p style="font-size: 12px; color: #999;">
-        — Bilsa Bank, the bank that fits in your pocket
+        — PME , Votre nuvelle plateforme de gestion de projet
       </p>
 
     </div>
