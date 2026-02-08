@@ -4,17 +4,26 @@ import { AuthRequest } from "types"
 import { prisma } from "../lib/prisma"
 import { Role } from "../generated/prisma/enums"
 import { createCommitteeSchema, CreateCommitteeInput } from "../schemas/committee.schema"
+import { CommitteeMember } from "generated/prisma/client"
 
 /**
- * @description Add a new committee
- * @route  POST/committee
- * @access Authentificated Admin
- * **/ 
+ * @description Create campaign committee
+ * @route POST /campaign/:campaignId/committee
+ * @access Authenticated Admin
+ */
 
 
 
 export const createCommittee = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+
+    const {campaignId}= req.params 
+    
+   
+    if(!campaignId){
+      res.status(400)
+      throw new Error('No campaign id')
+    }
 
     const parsed = createCommitteeSchema.safeParse(req.body)
 
@@ -23,7 +32,7 @@ if (!parsed.success) {
   throw new Error('Invalid datas')
 }
 
-const { name, description, members }: CreateCommitteeInput = parsed.data
+const { name, description, members, stepId }: CreateCommitteeInput = parsed.data
 
    
 
@@ -48,12 +57,43 @@ const { name, description, members }: CreateCommitteeInput = parsed.data
       throw new Error("Un utilisateur ne peut être ajouté qu'une seule fois")
     }
 
+
+    // Vérifier que l’étape existe et appartient à la campagne
+const step = await prisma.campaignStep.findFirst({
+  where: {
+    id: stepId,
+    campaignId
+  }
+})
+
+if (!step) {
+  res.status(404)
+  throw new Error("Étape introuvable pour cette campagne")
+}
+
+// Vérifier que l’étape n’est pas déjà utilisée
+const existingCommittee = await prisma.committee.findUnique({
+  where: {
+    stepId
+  }
+})
+
+if (existingCommittee) {
+  res.status(409)
+  throw new Error(
+    "Cette étape est déjà associée à un autre comité"
+  )
+}
+
     /* ================= CREATE COMMITTEE ================= */
+
 
     const committee = await prisma.committee.create({
       data: {
         name,
         description,
+        campaignId ,
+        stepId ,
         members: {
           create: members.map((member: any) => ({
             userId: member.userId,
@@ -145,7 +185,7 @@ export const getCommitteeProjects = asyncHandler(
             }
           },
           documents : true,
-          subSteps : true
+        
         }
       }
     )
@@ -191,15 +231,15 @@ export const getCommittees = asyncHandler(async (req: AuthRequest, res: Response
  */
 export const getCommitteeDetails = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    const { id } = req.params;
+    const { committeeId } = req.params;
 
-    if (!id) {
+    if (!committeeId) {
       res.status(400);
       throw new Error("Committee id is required");
     }
 
     const committee = await prisma.committee.findUnique({
-      where: { id },
+      where: { id : committeeId },
       include: {
         members: {
           include: {
@@ -217,6 +257,8 @@ export const getCommitteeDetails = asyncHandler(
             createdAt: "asc",
           },
         },
+        meetings : true,
+        step : true
       },
     });
 

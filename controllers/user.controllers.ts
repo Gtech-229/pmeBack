@@ -149,7 +149,8 @@ export const getUserById = asyncHandler(async (req: AuthRequest, res: Response) 
       lastName: true,
       role: true,
       isActive: true,
-      createdAt: true
+      createdAt: true,
+      pme : true
     }
   })
 

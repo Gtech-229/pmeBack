@@ -1,5 +1,5 @@
 import { z } from "zod"
-
+import { AFRICA_FR_ADMIN_DIVISIONS } from "../utils/admin-division"
 
 
 export const step1Schema = z.object({
@@ -12,7 +12,7 @@ export const step1Schema = z.object({
 }),
 
   type: z
-    .enum(["non_profit","for_profit"],{
+    .enum(["non_profit","for_profit", "ong"],{
   error: (iss) => iss.input === undefined ? "Selectionnez un type" : "Invalid input."
 })
 ,
@@ -25,6 +25,12 @@ export const step1Schema = z.object({
   description: z
     .string({error : (iss)=> iss.input === undefined ? "Une description devotre entreprise est requise" : "Invalid input"})
     .min(30, {error : "Trop court"}),
+
+    activityField : z
+ .string()
+ .min(4,{
+  error : (iss) => iss.input === undefined ? "Saisissew votre secteur d'activite" : "Entree invalide"
+ }),
     
 
   userRole: z
@@ -55,6 +61,7 @@ export const step2Schema  = z.object({
         : "Numéro invalide",
   }).min(6, "Le numéro doit contenir au moins 6 chiffres"),
 
+
   website: z
     .string({
       error: "URL invalide",
@@ -70,19 +77,20 @@ export const step2Schema  = z.object({
         : "Valeur invalide",
   }).min(2, "Nom du pays trop court"),
 
-  city: z.string({
-    error: (iss) =>
-      iss.input === undefined
-        ? "La ville est requise"
-        : "Valeur invalide",
-  }).min(2, "Nom de la ville trop court"),
+  administrative: z.record(
+      z.string(),
+      z.string().min(2, "Champ requis")
+    ),
+
+    city: z.string().optional(),
+
 
   address: z.string({
     error: (iss) =>
       iss.input === undefined
         ? "L’adresse est requise"
         : "Valeur invalide",
-  }).min(5, "Adresse trop courte"),
+  }).min(4, "Adresse trop courte"),
 
   logoUrl: z
     .string({
@@ -91,7 +99,21 @@ export const step2Schema  = z.object({
     .url("URL du logo invalide")
     .optional()
     .or(z.literal("")),
-})
+}).superRefine((data, ctx) => {
+    const config = AFRICA_FR_ADMIN_DIVISIONS[data.country]
+    if (!config) return
+
+    for (const level of config.levels) {
+      if (!data.administrative?.[level.key]) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["administrative", level.key],
+          message: `${level.label} requis`,
+        })
+      }
+    }
+  })
+
 
 
 export const fullOnboardingSchema =

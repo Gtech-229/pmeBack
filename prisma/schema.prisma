@@ -25,7 +25,7 @@ model User {
 
   // Rôle & permissions
   role           Role      @default(PME)
-  isActive       Boolean   @default(false)
+  isActive       Boolean   @default(true)
 
 
   
@@ -44,10 +44,6 @@ model User {
   codeExpires           DateTime?
   codeIsVerified         Boolean  @default(false)
 
-  // Relations
-  validatedProjects      Project[]       @relation("ProjectValidators")
-  validatedSubSteps      SubStep[]       @relation("SubStepValidators")
-
   pme            PME?   
   activity          Activity[]  
   committeMember      CommitteeMember[]
@@ -55,12 +51,7 @@ model User {
 
 }
 
-enum Role {
-  SUPER_ADMIN
-  ADMIN
-  PME
-  FINANCIER
-}
+
 
 
 model RefreshToken {
@@ -92,16 +83,18 @@ model PME {
   logoId      String?
 
   /* --- Localisation --- */
-  address     String
-  city        String
-  country     String
+  country        String           
+  administrative Json?            
+  city           String?           
+  address        String
 
   /* --- Rôle utilisateur --- */
   userRole    String?
+  activityField   String
 
   /* --- Relations --- */
   projects    Project[]
-  activity          Activity[]
+  activity    Activity[]
 
   ownerId     String   @unique
   owner       User     @relation(fields: [ownerId], references: [id])
@@ -126,17 +119,62 @@ model Project {
   fundedAmount        Float?
   fundDisbursementDates DateTime[]
    documents              Document[]
-  validatedBy         User[]      @relation("ProjectValidators")
   validatedAt         DateTime?
-  subSteps            SubStep[]
+  currentStepOrder   Int?
+  stepProgress           ProjectStepProgress[]
  activity          Activity[]
- credit            Float?
+ credits            ProjectCredit[]
+  statusHistory ProjectStatusHistory[]
  hasCredit        Boolean
  meetingProject      MeetingProjectDecision[]
-  submissionDate      DateTime    @default(now())
+  campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id])
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
+  @@index([status])
+  @@index([createdAt])
+  @@unique([campaignId, pmeId])
 }
+
+model ProjectStatusHistory {
+  id        String @id @default(uuid())
+
+  projectId String
+  project   Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  status    ProjectStatus   // approved, funded, failed, etc.
+  changedAt DateTime        @default(now())
+
+
+  createdAt DateTime @default(now())
+
+  @@index([projectId, status])
+}
+
+
+
+model ProjectStepProgress {
+  id             String   @id @default(uuid())
+
+  projectId      String
+  project        Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  campaignStepId String
+  campaignStep   CampaignStep @relation(fields: [campaignStepId], references: [id])
+
+  status         StepStatus @default(PENDING)
+
+  validatedAt    DateTime?
+  comment        String?
+  stepDocuments   Document[]
+
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@unique([projectId, campaignStepId])
+  @@index([status])
+}
+
 
 model Document {
   id          String   @id @default(uuid())
@@ -146,11 +184,15 @@ model Document {
   fileUrl     String
   publicId    String
   mimeType    String?
-  size        Int?     // taille en bytes (optionnel)
+  size        Int ?    
 
   // Relation
   project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
   projectId   String
+
+  projectStepId  String
+  projectStep    ProjectStepProgress @relation(fields: [projectStepId], references: [id], onDelete: Cascade)
+
 
   
   // Audit
@@ -176,6 +218,51 @@ model Activity {
   createdAt DateTime @default(now())
 }
 
+model Campaign {
+  id          String          @id @default(uuid())
+  name        String
+  description String
+  start_date  DateTime
+  end_date    DateTime
+  status      CampaignStatus  @default(DRAFT)
+  committees   Committee[]
+  steps       CampaignStep[]
+ projects      Project[]
+ targetProjects Int? 
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([status])
+  @@index([start_date, end_date])
+}
+
+
+
+model CampaignStep {
+  id          String   @id @default(uuid())
+
+  campaignId  String
+  campaign    Campaign @relation(fields: [campaignId], references: [id])
+
+  name        String       
+  order       Int
+
+  committee   Committee?    
+ 
+  createdAt   DateTime @default(now())
+   projectSteps ProjectStepProgress[]
+  @@unique([campaignId, order])
+}
+
+ 
+
+enum CampaignStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+
 
 
 enum ActivityType {
@@ -198,39 +285,8 @@ enum ProjectStatus {
   suspended
 }
 
-model SubStep {
-  id           String      @id @default(uuid())
-  name         String
-  description  String?
-  state        SubStepState @default(pending)
-  dueDate      DateTime?
-  completedAt  DateTime?
-  remarks      String?
 
-  project      Project     @relation(fields: [projectId], references: [id])
-  projectId    String
-  validatedBy  User[]      @relation("SubStepValidators")
 
-  createdAt    DateTime    @default(now())
-  updatedAt    DateTime    @updatedAt
-}
-
-enum SubStepState {
-  pending
-  in_progress
-  validated
-  failed
-}
-
-enum PMESize {
-  small
-  middle
-}
-
-enum PMEType {
-  non_profit
-  for_profit
-}
 
 
 
@@ -239,11 +295,18 @@ model Committee {
   name        String
   description String?
 
+ campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id])
+  
   members     CommitteeMember[]
   meetings    CommitteeMeeting[]
 
+  stepId        String   @unique
+  step          CampaignStep @relation(fields: [stepId], references: [id])
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  
 }
 
 
@@ -373,6 +436,24 @@ model ReportDocument {
 
 
 
+model ProjectCredit {
+  id               String   @id @default(uuid())
+  borrower   String
+
+  amount           Float
+  interestRate     Float
+  monthlyPayment   Float
+  remainingBalance Float
+  dueDate          DateTime
+
+  projectId        String
+  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@index([projectId])
+}
 
 
 
@@ -403,6 +484,35 @@ enum ReportStatus {
   DRAFT
   APPLIED
 }
+
+
+
+enum PMESize {
+  small
+  middle
+}
+
+enum PMEType {
+  non_profit
+  for_profit
+  ong
+}
+
+
+enum StepStatus {
+  PENDING
+  IN_PROGRESS
+  APPROVED
+  REJECTED
+}
+
+enum Role {
+  SUPER_ADMIN
+  ADMIN
+  PME
+  FINANCIER
+}
+
 
 
 

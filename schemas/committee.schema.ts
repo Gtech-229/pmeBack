@@ -3,6 +3,7 @@ import { CommitteeRole } from "../generated/prisma/enums"
 
 export const createCommitteeSchema = z.object({
   name: z.string().min(3, "Le nom du comité est requis"),
+  stepId: z.string().uuid(),
   description: z.string(),
   members: z.array(
     z.object({

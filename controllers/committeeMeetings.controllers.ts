@@ -8,6 +8,12 @@ import { combineDateAndTime } from "../utils/combinateDateAndHour"
 import { uploadToCloudinary } from "../utils/UploadToCloudinary"
 import { ActivityType } from "generated/prisma/enums"
 
+/**
+ * @description  Create a new committee
+ * @route POST /committee/meetings
+ * @access  Admin
+ * **/ 
+
 export const createMeeting = asyncHandler(
   async (req: AuthRequest, res: Response) => {
 
@@ -81,7 +87,10 @@ export const getMeetings = asyncHandler(
     // Vérifier que le comité existe
     const committee = await prisma.committee.findUnique({
       where: { id: committeeId },
-      select: { id: true },
+      select: {
+         id: true 
+
+      },
     })
 
     if (!committee) {
@@ -126,7 +135,7 @@ export const getMeetings = asyncHandler(
 
 
 /**
- * @description get a meeting details
+ * @description get a single meeting details
  * @route GET /committee/meetings/:meetingId
  * @access Private
  */
@@ -261,10 +270,15 @@ export const updateMeeting = asyncHandler(
       res.status(401)
       throw new Error("Unauthorized")
     }
-    console.log(req.body)
+    
 
     // Validation Zod
     const data = updateMeetingSchema.parse(req.body)
+
+    if(!data) {
+      res.status(400)
+      throw new Error("Données invalides")
+    }
   
     //  Vérifier que la réunion existe
     const meeting = await prisma.committeeMeeting.findUnique({
@@ -532,13 +546,20 @@ export const signReport = asyncHandler(async (req: AuthRequest, res: Response) =
     },
   })
 
+if(!report){
+  res.status(404)
+   throw new Error('Meeting report not found')
+
+}
+
   if (!report || report.status !== 'DRAFT') {
-    res.status(404)
-    throw new Error('Meeting report not found or not signable')
+   res.status(409)
+    throw new Error('Meeting report not signable')
   }
 
-  /**
- * Vérifier que l'utilisateur est présent à la réunion
+  /*
+  *
+   * Vérifier que l'utilisateur est présent à la réunion
  */
 const presence = report.meeting.presences.find(
   (p) => p.member.userId === userId

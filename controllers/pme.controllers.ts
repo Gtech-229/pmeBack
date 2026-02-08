@@ -6,13 +6,14 @@ import { fullOnboardingSchema } from "../schemas/pme.onBoarding";
 import { removeFromCloudinary } from "../utils/RemoveFromCloudinary";
 import { uploadToCloudinary } from "../utils/UploadToCloudinary";
 
+
 export const createPMESchema = fullOnboardingSchema.strict()
 
 
 /**
- * @description : Set a user 's account as validate and create his pme
+ * @description : Set a user's account as validated and create his PME
  * @Route : POST/
- * **/ 
+ */
 export const validateAccount = asyncHandler(
   async (req: AuthRequest, res: Response) => {
 
@@ -21,30 +22,48 @@ export const validateAccount = asyncHandler(
       throw new Error("User not authenticated")
     }
 
+    const userId = req.user.id
+console.log("req body:", req.body)
+    // 🔹 Zod validation
+    const parsed = createPMESchema.safeParse(req.body)
 
-    const userId = req.user?.id
- 
+    if (!parsed.success) {
+      res.status(400)
+      throw parsed.error
+    }
 
- 
-
-    //  zod validation
-  const parsed = createPMESchema.safeParse(req.body)
-
-  if (!parsed.success) {
-    res.status(400)
-    throw parsed.error
+    const data = parsed.data
+    
+    // 🔹 Normalisation localisation
+    // Si administrative existe et contient des clés, on la garde
+    // Sinon on met administrative à null et on garde city
+    const hasAdministrative =
+      data.administrative &&
+      Object.keys(data.administrative).length > 0
+    let location
+  if(!hasAdministrative){
+     location = {
+      administrative:  {},
+      city: data.city,
+    }
   }
 
-  const data = parsed.data
+  location ={
+     administrative: data.administrative,
+     city : null
+  }
 
-       
+  
+   
 
-    // Check user
+  
+
+    // 🔹 Vérification de l'utilisateur
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
         codeIsVerified: true,
-        validatedAt : true
+        validatedAt: true
       },
     })
 
@@ -63,43 +82,47 @@ export const validateAccount = asyncHandler(
       throw new Error("Account already validated")
     }
 
-    
+
+
+    // 🔹 Transaction Prisma
     await prisma.$transaction([
+
+
       prisma.pME.create({
         data: {
-          ownerId : userId,
-          name: data.name,
-          phone: data.phone,
-          address: data.address,
-          email : data.email,
-          description : data.description,
-           type : data.type,
-           size : data.size,
-           city : data.city,
-           country : data.country
-        },
+      ownerId: userId,
+        name: data.name,
+        phone: data.phone,
+        address: data.address,
+        email: data.email,
+        description: data.description,
+        type: data.type,
+        size: data.size,
+        country: data.country,
+        administrative: location.administrative,
+        city : location.city,
+        activityField : data.activityField,
+        userRole : data.userRole ?? ""
+        }
       }),
 
       prisma.user.update({
         where: { id: userId },
         data: {
           validatedAt: new Date(),
-          isActive : true
+          isActive: true,
         },
       }),
 
-       prisma.activity.create({
-      data : {
-        type : 'ACCOUNT_VERIFIED',
-        title : "Compte Vérifié",
-        message : "Félicitations . La vérification de votre organisation a été effectuée avec succès . Vou pouvew désormais procéder à la soumission d'un projet.",
-        userId 
-      }
-    })
+      prisma.activity.create({
+        data: {
+          type: 'ACCOUNT_VERIFIED',
+          title: "Compte Vérifié",
+          message: "Félicitations. La vérification de votre organisation a été effectuée avec succès. Vous pouvez désormais procéder à la soumission d'un projet.",
+          userId
+        }
+      })
     ])
-
-
-  
 
     res.status(200).json({
       success: true,
@@ -133,6 +156,14 @@ export const getPme = asyncHandler(async (req: AuthRequest, res: Response) => {
 // Order when pme 'll be able to get many projects
       include : {
 projects : {
+  include : {
+    campaign : true,
+    stepProgress : {
+      include : {
+        campaignStep : true
+      }
+    }
+  },
   orderBy : {
     createdAt : 'desc'
   }
@@ -143,9 +174,8 @@ projects : {
 
     
     if (!pme) {
-    res.status(404).json({
-        message: "No PME found for this user",
-      })
+    res.status(404)
+    throw new Error("Pas d'organisation")
     }
 
     

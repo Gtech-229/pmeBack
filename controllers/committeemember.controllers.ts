@@ -122,7 +122,7 @@ export const getCommitteeMembers = asyncHandler(
     }
 
     const { committeeId } = req.params as { committeeId?: string };
-
+    
     if (!committeeId) {
       res.status(400);
       throw new Error("committeeId is required");

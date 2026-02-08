@@ -11,6 +11,7 @@ import pmeRoutes from './routes/pme.routes'
 import activitiesRoutes from './routes/activities.routes'
 import committeeRoutes from './routes/committee.route'
 import dashboardRoutes from './routes/dashboard.route'
+import campaignRoutes from './routes/campaign.route'
 import { createRateLimiter } from "./middlewares/ratelimit";
 // Initialisations
 dotenv.config()
@@ -51,6 +52,7 @@ app.use('/api/onboarding/pme',pmeRoutes)
 app.use("/api/activities",activitiesRoutes);
 app.use("/api/committee",committeeRoutes);
 app.use("/api/dashboard", dashboardRoutes)
+app.use("/api/campaign", campaignRoutes)
 
 
 app.use(errorHandler);

@@ -3,7 +3,7 @@ import asyncHandler from 'express-async-handler'
 import { prisma } from '../lib/prisma'
 import { AuthRequest } from 'types'
 import { uploadToCloudinary , } from '../utils/UploadToCloudinary'
-import { CreateProjectBodyDTO, createProjectBodySchema } from '../schemas/project.schema'
+import { createProjectBodySchema } from '../schemas/project.schema'
 import { updateProjectSchema } from '../schemas/project.schema'
 import { removeFromCloudinary } from '../utils/RemoveFromCloudinary'
 import { ProjectStatus } from '../generated/prisma/enums'
@@ -12,97 +12,192 @@ import { ProjectStatus } from '../generated/prisma/enums'
  * @route  POST/projects
  * @access Private(authentificated pme)
  * **/ 
+
 export const createProject = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-  
-    // Zod validation 
-    const parsedBody = createProjectBodySchema.safeParse(req.body)
 
+    /* ---------------- AUTH ---------------- */
+
+    if (!req.user?.id) {
+      res.status(401)
+      throw new Error("Unauthorized")
+    }
+
+    const user = await prisma.user.findUnique({
+      where: { id: req.user.id },
+      include: { pme: true }
+    })
+
+    if (!user || !user.pme?.id) {
+      res.status(403)
+      throw new Error("Utilisateur non autorisé à créer un projet")
+    }
+    const pmeId = user.pme.id
+
+    
+
+    /* ---------------- BODY PARSING ---------------- */
+
+    let credits
+    try {
+      credits = req.body.credits ? JSON.parse(req.body.credits) : undefined
+    } catch {
+      res.status(400)
+      throw new Error("Format JSON invalide pour les crédits")
+    }
+
+    const bodyToValidate = { ...req.body, credits }
+
+    const parsedBody = createProjectBodySchema.safeParse(bodyToValidate)
     if (!parsedBody.success) {
       res.status(400)
       throw parsedBody.error
     }
 
-  // Check the user
-    const userId = req.user?.id
-    if (!userId) {
-      res.status(401)
-      throw new Error('Utilisateur non authentifié')
-    }
+    const {
+      title,
+      description,
+      requestedAmount,
+      hasCredit,
+      campaignId,
+      credits: parsedCredits
+    } = parsedBody.data
 
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      include: { pme : true}
+    
+    // Check if the usser has already a project in the selected campaign
+    const hasAlreadyCampaignProject = await prisma.project.findFirst({
+      where : {campaignId , pmeId}
     })
 
-    if (!user || !user.pme) {
-      res.status(403)
-      throw new Error('Utilisateur non autorisé à créer un projet')
+    if(hasAlreadyCampaignProject) {
+      res.status(400)
+      throw new Error("Votre organisation dispose déjà d'un projet pour le compte de cette campagne")
     }
 
-    const { title, description, requestedAmount, hasCredit } = parsedBody.data
+   
 
-//  Files validation
-     const files = req.files as Express.Multer.File[]
+    /* ---------------- FILES VALIDATION ---------------- */
+
+    const files = req.files as Express.Multer.File[]
 
     if (!files || files.length === 0) {
       res.status(400)
-      throw new Error('Au moins un document est requis')
+      throw new Error("Au moins un document est requis pour la soumission d'un projet")
     }
 
-    
+    /* ---------------- CAMPAIGN STEPS ---------------- */
 
-    
+    const campaignSteps = await prisma.campaignStep.findMany({
+      where: { campaignId },
+      orderBy: { order: "asc" }
+    })
 
 
 
-    // Transactions
-  // 1. Crée le projet d’abord
-const createdProject = await prisma.project.create({
-  data: { title, description, requestedAmount, pmeId: user.pme?.id, hasCredit : hasCredit==="true" }
+    if (!campaignSteps || campaignSteps.length === 0) {
+      res.status(400)
+      throw new Error("La campagne ne contient aucune étape")
+    }
+
+
+
+    /* ---------------- TRANSACTION ---------------- */
+
+   const project = await prisma.$transaction(async (tx) => {
+  const createdProject = await tx.project.create({
+    data: {
+      title,
+      description,
+      requestedAmount,
+      hasCredit: hasCredit === "true",
+      pmeId,
+      campaignId,
+      status: "pending",
+      currentStepOrder: 1
+    }
+  })
+
+  await tx.projectStatusHistory.create({
+    data: {
+      projectId: createdProject.id,
+      status: "pending"
+    }
+  })
+
+  let firstStepId: string | null = null
+
+  for (const step of campaignSteps) {
+    const createdStep = await tx.projectStepProgress.create({
+      data: {
+        projectId: createdProject.id,
+        campaignStepId: step.id,
+        status: step.order === 1 ? "IN_PROGRESS" : "PENDING"
+      }
+    })
+
+    if (step.order === 1) {
+      firstStepId = createdStep.id
+    }
+  }
+
+  if (!firstStepId) {
+    throw new Error("Aucune étape initiale trouvée")
+  }
+
+  return {
+    project: createdProject,
+    firstStepId
+  }
 })
 
-// 2. Upload fichiers + créer documents hors transaction
-const filesWithDocs = []
 
-for (let i = 0; i < files.length; i++) {
+
+    /* ---------------- DOCUMENTS UPLOAD ---------------- */
+
+ for (let i = 0; i < files.length; i++) {
   const file = files[i]
-  const label = req.body.documentsMeta[i]?.label
-  if(!file || !label){
-    throw new Error(`Intitule ou document${i + 1} manquant `)
-  }
-  const uploadResult = await uploadToCloudinary(file, `projects/${createdProject.id}`)
+  const label = req.body.documentsMeta?.[i]?.label
 
-  const document = await prisma.document.create({
+  if (!file || !label) {
+    throw new Error(`Document ou intitulé manquant (index ${i})`)
+  }
+
+  const uploadResult = await uploadToCloudinary(
+    file,
+    `projects/${project.project.id}`
+  )
+
+  await prisma.document.create({
     data: {
       title: label,
       fileUrl: uploadResult.url,
       publicId: uploadResult.publicId,
       mimeType: file.mimetype,
       size: file.size,
-      projectId: createdProject.id
+      projectId: project.project.id,
+      projectStepId: project.firstStepId 
     }
   })
-
-  filesWithDocs.push(document)
 }
 
-// Activity
-await prisma.activity.create({
-  data : {
-    type : 'PROJECT_CREATED',
-    title : "Nouveau Projet",
-    message : `Votre nouveau projet a bien été soumis et est en attente d'approbation des administrateurs. Vous serez tenu informé des prochaines décisions.`,
-    userId ,
-    pmeId : user.pme.id
-  }
-})
+
+    /* ---------------- ACTIVITY ---------------- */
+
+    await prisma.activity.create({
+      data: {
+        type: "PROJECT_CREATED",
+        title: "Nouveau projet",
+        message:
+          "Votre projet a bien été soumis et est en attente de traitement. Vous serez informé des prochaines étapes.",
+        userId: req.user.id,
+        pmeId: user.pme.id
+      }
+    })
 
     /* ---------------- RESPONSE ---------------- */
 
     res.status(201).json({
-      success: true,
-      projectId: createdProject.id
+      success: true
     })
   }
 )
@@ -110,53 +205,145 @@ await prisma.activity.create({
 
 
 
+
 /**
- * @description Get projects
- * @route  GET/projects
- * @access Private (allowed roles)
- * **/ 
-export const getProjects = asyncHandler(async (req: AuthRequest, res: Response) => {
-   
-    const projects = await prisma.project.findMany({
-      include: { 
-       
-        pme : {
-        include : {owner : true}
+ * @description Get projects (paginated + filtered)
+ * @route  GET /projects
+ * @access Private
+ */
+export const getProjects = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const page = Math.max(Number(req.query.page) || 1, 1)
+    const limit = Math.min(Number(req.query.limit) || 10, 50)
+    const skip = (page - 1) * limit
+
+    const { status, date, search,campaign, step, } = req.query
+
+    //  Build Prisma where clause dynamically
+    const where: any = {}
+
+    if (status && status !== 'all') {
+      where.status = status
+    }
+
+    if (search) {
+      where.title = {
+        contains: String(search),
+        mode: 'insensitive',
       }
+    }
 
-    }});
+    if (date && date !== 'all') {
+      const now = new Date()
 
-    res.status(200).json(projects);
- 
+      switch (date) {
+        case 'week':
+          where.createdAt = {
+            gte: new Date(now.setDate(now.getDate() - 7)),
+          }
+          break
+        case 'month':
+          where.createdAt = {
+            gte: new Date(now.setMonth(now.getMonth() - 1)),
+          }
+          break
+        case 'year':
+          where.createdAt = {
+            gte: new Date(now.setFullYear(now.getFullYear() - 1)),
+          }
+          break
+      }
+    }
+
+    if (step && step !== 'all') {
+  where.currentStep = Number(step)
 }
+
+
+    if(campaign && campaign !== 'all'){
+      where.campaignId = campaign
+    }
+
+    // ⚡ Fetch data + count in one transaction
+    const [projects, total] = await prisma.$transaction([
+      prisma.project.findMany({
+        where,
+        skip,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          pme: {
+            include: { owner: true },
+          },
+          stepProgress : {
+            include : {
+              campaignStep : true
+            }
+          },
+
+          campaign : true
+        },
+      }),
+      prisma.project.count({ where }),
+    ])
+
+    res.status(200).json({
+      data: projects,
+      total,
+      page,
+      pageCount: Math.ceil(total / limit),
+    })
+  }
 )
+
 
 
 
 
 /**
  * @description Get single project
- * @route  GET/projects/id
+ * @route  GET/projects/:id
  * @access Authentificated
  * **/ 
 export const getProject = asyncHandler( async (req: Request, res: Response)=> {
 
     const id = req.params.id;
+    console.log(id)
     if(!id){
+      res.status(400)
       throw new Error("No id specified on the request")
     }
 
     const project = await prisma.project.findUnique({
       where: { id },
      include: {
-      documents : true,
-      subSteps :true,
+      
           pme : {
             include : {
-              owner : true
+              owner : true,
+              projects : {
+                include : {
+                  campaign : true
+                }
+              }
+              
+              
             }
-          }
-        }
+          },
+          campaign : true,
+          stepProgress : {
+            include : {
+              campaignStep :{
+                include: {
+                  committee : true
+                }
+              },
+              stepDocuments : true,
+              
+            }
+          },
+          credits : true
+        } 
     });
 
     if (!project)  res.status(404).json({ message: "Project not found" });
@@ -176,7 +363,7 @@ export const getProject = asyncHandler( async (req: Request, res: Response)=> {
 export const deleteProject = asyncHandler(async (req: AuthRequest, res: Response) => {
   
     const id = req.params.id;
-    console.log("Id received :",id)
+    
     if(!id){
       res.status(400);
       throw new Error('No project id')
@@ -229,12 +416,14 @@ export const getMyProjects = asyncHandler (
       orderBy: {
         createdAt: 'desc',
       },
+
     })
 
 
     if(!projects) {
-      throw new Error ('No projects found')
       res.status(404)
+      throw new Error ('No projects found')
+      
     }
 
     res.status(200).json(projects)
@@ -277,13 +466,24 @@ export const updateProject = asyncHandler(async(req : AuthRequest, res: Response
     description,
     requestedAmount,
     existingDocuments,
-    removedDocuments
+    removedDocuments,
+    campaignId,
+    newCredits,
+    existingCredits,
+    removedCredits,
+    hasCredit
   } = parsedData.data
+
+  
 
 
     const project = await prisma.project.findUnique({
       where : {id : projectId},
-      include : {documents : true}
+      include : {
+        documents : true ,
+         stepProgress : true,
+         credits : true
+        }
     })
 
     if(!project){
@@ -300,13 +500,14 @@ export const updateProject = asyncHandler(async(req : AuthRequest, res: Response
     res.status(403)
     throw new Error('Not allowed to update this project')
   }
- // Update basics fields
-   await prisma.project.update({
+  await prisma.project.update({
     where: { id: projectId },
     data: {
       title,
       description,
-      requestedAmount
+      requestedAmount,
+      campaignId,
+      hasCredit 
     }
   })
 
@@ -329,6 +530,8 @@ export const updateProject = asyncHandler(async(req : AuthRequest, res: Response
       await prisma.document.delete({ where: { id: doc.id } })
     }
   }
+
+  
 
 
 // ---------------------------
@@ -358,6 +561,16 @@ if (files?.length) {
       `projects/${project.id}`
     )
 
+      const currentStep = project.stepProgress.find(
+  (step) => step.status === "IN_PROGRESS"
+);
+
+if (!currentStep) {
+  throw new Error("Aucune étape en cours trouvée pour ce projet");
+}
+
+  
+
     await prisma.document.create({
       data: {
         title: meta.title,
@@ -365,16 +578,64 @@ if (files?.length) {
         publicId: upload.publicId,
         mimeType: file.mimetype,
         size: file.size,
-        projectId: project.id
+        projectId: project.id,
+        projectStepId : currentStep.id
       }
     })
+
+    
+
+
   }
 }
+
+
+// Credits
+
+     if (removedCredits?.length) {
+    await prisma.projectCredit.deleteMany({
+      where: { id: { in: removedCredits } }
+    })
+  }
+
+
+  if (existingCredits?.length) {
+    for (const credit of existingCredits) {
+      await prisma.projectCredit.update({
+        where: { id: credit.id },
+        data: {
+          borrower: credit.borrower,
+          amount: credit.amount,
+          interestRate: credit.interestRate,
+          monthlyPayment: credit.monthlyPayment,
+          remainingBalance: credit.remainingBalance,
+          dueDate: credit.dueDate
+        }
+      })
+    }
+  }
+
+
+  
+
+    if (newCredits?.length) {
+    await prisma.projectCredit.createMany({
+      data: newCredits.map(c => ({
+        borrower: c.borrower,
+        amount: c.amount,
+        interestRate: c.interestRate,
+        monthlyPayment: c.monthlyPayment,
+        remainingBalance: c.remainingBalance,
+        dueDate: c.dueDate,
+        projectId: projectId 
+      }))
+    })
+  }
 
    res.status(200).json({
     message: 'Project updated successfully'
   })
-console.log("Received datas :", req.body)
+
 
 })
 
@@ -386,82 +647,82 @@ console.log("Received datas :", req.body)
  */
 export const changeStatus = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    const { id } = req.params
-    const { status } = req.body
+  //   const { id } = req.params
+  //   const { status } = req.body
 
-    if (!id) throw new Error("Project id required")
+  //   if (!id) throw new Error("Project id required")
 
-    if (status !== "approved") {
-      // status (rejected, funded, .....)
-      const project = await prisma.project.update({
-        where: { id },
-        data: { status },
+  //   if (status !== "approved") {
+  //     // status (rejected, funded, .....)
+  //     const project = await prisma.project.update({
+  //       where: { id },
+  //       data: { status },
         
-      })
+  //     })
 
-      res.status(200).json(project)
-    }
+  //     res.status(200).json(project)
+  //   }
 
-    // when status === approved
+  //   // when status === approved
 
-    const project = await prisma.project.findUnique({
-      where: { id },
-      include: { validatedBy: true },
-    })
+  //   const project = await prisma.project.findUnique({
+  //     where: { id },
+     
+  //   })
 
-    if (!project) throw new Error("Project not found")
-  //  Avoid double validatons
-    const alreadyValidated = project.validatedBy.some(
-      (u) => u.id === req.user!.id
-    )
+  //   if (!project) throw new Error("Project not found")
+  // //  Avoid double validatons
+  //   // const alreadyValidated = project.validatedBy.some(
+  //   //   (u) => u.id === req.user!.id
+  //   // )
 
-    if (alreadyValidated) {
-      res.status(400)
-      throw new Error("Already validated by this user")
-    }
+  //   // if (alreadyValidated) {
+  //   //   res.status(400)
+  //   //   throw new Error("Already validated by this user")
+  //   // }
 
-    // add validator
-    await prisma.project.update({
-      where: { id },
-      data: {
-        validatedBy: {
-          connect: { id: req.user!.id },
-        },
-      },
-    })
+  //   // add validator
+  //   await prisma.project.update({
+  //     where: { id },
+  //     data: {
+  //       validatedBy: {
+  //         connect: { id: req.user!.id },
+  //       },
+  //     },
+  //   })
 
-    //  re-fetch validators
-    const updatedProject = await prisma.project.findUnique({
-      where: { id },
-      include: {
-        validatedBy: true,
+  //   //  re-fetch validators
+  //   const updatedProject = await prisma.project.findUnique({
+  //     where: { id },
+  //     include: {
+  //       validatedBy: true,
         
-      },
-    })
+  //     },
+  //   })
 
-    // Amount of admin and super admin that approved the project
-    const adminsCount = updatedProject!.validatedBy.filter(
-      (u) => u.role === "ADMIN"
-    ).length
+  //   // Amount of admin and super admin that approved the project
+  //   const adminsCount = updatedProject!.validatedBy.filter(
+  //     (u) => u.role === "ADMIN"
+  //   ).length
 
-    const hasSuperAdmin = updatedProject!.validatedBy.some(
-      (u) => u.role === "SUPER_ADMIN"
-    )
-      // Mark as approved
-    if (adminsCount >= 2 && hasSuperAdmin) {
-      const approvedProject = await prisma.project.update({
-        where: { id },
-        data: {
-          status: "approved",
-          validatedAt: new Date(),
-        },
+  //   const hasSuperAdmin = updatedProject!.validatedBy.some(
+  //     (u) => u.role === "SUPER_ADMIN"
+  //   )
+  //     // Mark as approved
+  //   if (adminsCount >= 2 && hasSuperAdmin) {
+  //     const approvedProject = await prisma.project.update({
+  //       where: { id },
+  //       data: {
+  //         status: "approved",
+  //         validatedAt: new Date(),
+  //       },
         
-      })
+  //     })
 
-     res.status(200).json(approvedProject)
-    }
+  //    res.status(200).json(approvedProject)
+  //   }
 
     
-    res.status(200).json(updatedProject)
+    res.status(200).json("mis a jour")
   }
 )
