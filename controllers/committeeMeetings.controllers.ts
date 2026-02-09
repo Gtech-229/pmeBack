@@ -7,7 +7,7 @@ import { createMeetingReportSchema } from "../schemas/committee.schema"
 import { combineDateAndTime } from "../utils/combinateDateAndHour"
 import { uploadToCloudinary } from "../utils/UploadToCloudinary"
 import { ActivityType } from "generated/prisma/enums"
-import { sendEmail } from "utils/sendEmail"
+import { sendEmail } from "../utils/sendEmail"
 
 
 /**
