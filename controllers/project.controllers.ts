@@ -256,8 +256,17 @@ export const getProjects = asyncHandler(
     }
 
     if (step && step !== 'all') {
-  where.currentStep = Number(step)
+  where.stepProgress = {
+    some: {
+      status: 'IN_PROGRESS',
+      campaignStep: {
+        order: Number(step),
+      },
+    },
+  }
 }
+
+
 
 
     if(campaign && campaign !== 'all'){

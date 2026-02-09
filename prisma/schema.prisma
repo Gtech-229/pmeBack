@@ -119,7 +119,6 @@ model Project {
   fundedAmount        Float?
   fundDisbursementDates DateTime[]
    documents              Document[]
-  validatedAt         DateTime?
   currentStepOrder   Int?
   stepProgress           ProjectStepProgress[]
  activity          Activity[]

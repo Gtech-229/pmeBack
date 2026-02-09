@@ -207,7 +207,8 @@ export const getMeetingDetails = asyncHandler(
               include : {
                 user : true
               }
-            }
+            },
+            step : true
           }
         }
       },
