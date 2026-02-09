@@ -128,14 +128,30 @@ exports.getMe = (0, express_async_handler_1.default)(async (req, res) => {
     const user = await prisma_1.prisma.user.findUnique({
         where: { id: req.user.id },
         select: {
+            pme: {
+                include: {
+                    projects: {
+                        include: {
+                            statusHistory: true,
+                            stepProgress: {
+                                include: {
+                                    campaignStep: true
+                                }
+                            }
+                        }
+                    },
+                }
+            },
             id: true,
             email: true,
             firstName: true,
             lastName: true,
             role: true,
-            createdAt: true,
+            isActive: true,
             lastLoginAt: true,
-            isActive: true
+            codeIsVerified: true,
+            activity: true,
+            createdAt: true
         }
     });
     if (!user) {
@@ -294,7 +310,7 @@ exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
     if (user?.verificationCode &&
         user.codeExpires &&
         user.codeExpires.getTime() > Date.now()) {
-        throw new Error("Un code est deja generer, saisissez le ou patientez");
+        throw new Error("Saisissez le code qui vous a été envoyé ou réessayez dans 3 minutes");
     }
     const { email } = req.body;
     if (!email) {
@@ -321,7 +337,7 @@ exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
     });
     // Send resend code
     await (0, sendEmail_1.sendEmail)({
-        to: `${user.email}`,
+        to: `${email}`,
         subject: "Account validation",
         html: `
     <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
@@ -353,18 +369,18 @@ exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
     
 
       <p style="font-size: 14px; color: #555;">
-        Si vous avez déjà vérifié votre compte, veuillez ignorer ce courriel.
-Ou contactez le support PME si vous avez des questions.
+        Si vous n'êtes pas à l'origine de ce code ou  si vous avez déjà vérifié votre compte, veuillez ignorer ce courriel.
+Ou contactez le support Suivi-Mp si vous avez des questions.
       </p>
 
       <p style="font-size: 12px; color: #999;">
-        — PME , Votre nuvelle plateforme de gestion de projet
+        — Suivi-Mp , Votre plateforme de gestion de projet
       </p>
 
     </div>
   `
     });
-    // 7️⃣ Réponse frontend
+    // Réponse frontend
     res.status(200).json({
         message: 'Verification code sent',
     });

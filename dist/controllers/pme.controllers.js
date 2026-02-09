@@ -11,23 +11,40 @@ const RemoveFromCloudinary_1 = require("../utils/RemoveFromCloudinary");
 const UploadToCloudinary_1 = require("../utils/UploadToCloudinary");
 exports.createPMESchema = pme_onBoarding_1.fullOnboardingSchema.strict();
 /**
- * @description : Set a user 's account as validate and create his pme
+ * @description : Set a user's account as validated and create his PME
  * @Route : POST/
- * **/
+ */
 exports.validateAccount = (0, express_async_handler_1.default)(async (req, res) => {
     if (!req.user?.id) {
         res.status(401);
         throw new Error("User not authenticated");
     }
-    const userId = req.user?.id;
-    //  zod validation
+    const userId = req.user.id;
+    console.log("req body:", req.body);
+    // 🔹 Zod validation
     const parsed = exports.createPMESchema.safeParse(req.body);
     if (!parsed.success) {
         res.status(400);
         throw parsed.error;
     }
     const data = parsed.data;
-    // Check user
+    // 🔹 Normalisation localisation
+    // Si administrative existe et contient des clés, on la garde
+    // Sinon on met administrative à null et on garde city
+    const hasAdministrative = data.administrative &&
+        Object.keys(data.administrative).length > 0;
+    let location;
+    if (!hasAdministrative) {
+        location = {
+            administrative: {},
+            city: data.city,
+        };
+    }
+    location = {
+        administrative: data.administrative,
+        city: null
+    };
+    // 🔹 Vérification de l'utilisateur
     const user = await prisma_1.prisma.user.findUnique({
         where: { id: userId },
         select: {
@@ -47,6 +64,7 @@ exports.validateAccount = (0, express_async_handler_1.default)(async (req, res) 
         res.status(409);
         throw new Error("Account already validated");
     }
+    // 🔹 Transaction Prisma
     await prisma_1.prisma.$transaction([
         prisma_1.prisma.pME.create({
             data: {
@@ -58,22 +76,25 @@ exports.validateAccount = (0, express_async_handler_1.default)(async (req, res) 
                 description: data.description,
                 type: data.type,
                 size: data.size,
-                city: data.city,
-                country: data.country
-            },
+                country: data.country,
+                administrative: location.administrative,
+                city: location.city,
+                activityField: data.activityField,
+                userRole: data.userRole ?? ""
+            }
         }),
         prisma_1.prisma.user.update({
             where: { id: userId },
             data: {
                 validatedAt: new Date(),
-                isActive: true
+                isActive: true,
             },
         }),
         prisma_1.prisma.activity.create({
             data: {
                 type: 'ACCOUNT_VERIFIED',
                 title: "Compte Vérifié",
-                message: "Félicitations . La vérification de votre organisation a été effectuée avec succès . Vou pouvew désormais procéder à la soumission d'un projet.",
+                message: "Félicitations. La vérification de votre organisation a été effectuée avec succès. Vous pouvez désormais procéder à la soumission d'un projet.",
                 userId
             }
         })
@@ -103,6 +124,14 @@ exports.getPme = (0, express_async_handler_1.default)(async (req, res) => {
         // Order when pme 'll be able to get many projects
         include: {
             projects: {
+                include: {
+                    campaign: true,
+                    stepProgress: {
+                        include: {
+                            campaignStep: true
+                        }
+                    }
+                },
                 orderBy: {
                     createdAt: 'desc'
                 }
@@ -110,9 +139,8 @@ exports.getPme = (0, express_async_handler_1.default)(async (req, res) => {
         }
     });
     if (!pme) {
-        res.status(404).json({
-            message: "No PME found for this user",
-        });
+        res.status(404);
+        throw new Error("Pas d'organisation");
     }
     res.status(200).json(pme);
 });

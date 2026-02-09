@@ -6,21 +6,21 @@ const resend = new resend_1.Resend(process.env.RESEND_API_KEY);
 const sendEmail = async ({ to, subject, html, text, }) => {
     try {
         const payload = {
-            from: process.env.NODE_ENV === 'production' ? process.env.RESEND_FROM : "Acme <onboarding@resend.dev>",
-            to: process.env.NODE_ENV === 'production' ? to : 'gtech229egn@gmail.com',
+            from: process.env.RESEND_FROM,
+            to,
             subject,
             html,
             ...(text ? { text } : {}),
         };
         const { data, error } = await resend.emails.send(payload);
         if (error) {
-            console.error("Resend error:", error);
+            // console.error("Resend error:", error)
             throw new Error("Email sending failed");
         }
         return data;
     }
     catch (err) {
-        console.error("SendEmail exception:", err);
+        // console.error("SendEmail exception:", err)
         throw err;
     }
 };

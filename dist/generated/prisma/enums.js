@@ -9,12 +9,11 @@
 * 🟢 You can import this file directly.
 */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.ReportStatus = exports.MeetingStatus = exports.CommitteeDecision = exports.CommitteeRole = exports.PMEType = exports.PMESize = exports.SubStepState = exports.ProjectStatus = exports.ActivityType = exports.Role = void 0;
-exports.Role = {
-    SUPER_ADMIN: 'SUPER_ADMIN',
-    ADMIN: 'ADMIN',
-    PME: 'PME',
-    FINANCIER: 'FINANCIER'
+exports.Role = exports.StepStatus = exports.PMEType = exports.PMESize = exports.ReportStatus = exports.MeetingStatus = exports.CommitteeDecision = exports.CommitteeRole = exports.ProjectStatus = exports.ActivityType = exports.CampaignStatus = void 0;
+exports.CampaignStatus = {
+    DRAFT: 'DRAFT',
+    OPEN: 'OPEN',
+    CLOSED: 'CLOSED'
 };
 exports.ActivityType = {
     WELCOME: 'WELCOME',
@@ -31,20 +30,6 @@ exports.ProjectStatus = {
     completed: 'completed',
     failed: 'failed',
     suspended: 'suspended'
-};
-exports.SubStepState = {
-    pending: 'pending',
-    in_progress: 'in_progress',
-    validated: 'validated',
-    failed: 'failed'
-};
-exports.PMESize = {
-    small: 'small',
-    middle: 'middle'
-};
-exports.PMEType = {
-    non_profit: 'non_profit',
-    for_profit: 'for_profit'
 };
 exports.CommitteeRole = {
     president: 'president',
@@ -67,5 +52,26 @@ exports.MeetingStatus = {
 exports.ReportStatus = {
     DRAFT: 'DRAFT',
     APPLIED: 'APPLIED'
+};
+exports.PMESize = {
+    small: 'small',
+    middle: 'middle'
+};
+exports.PMEType = {
+    non_profit: 'non_profit',
+    for_profit: 'for_profit',
+    ong: 'ong'
+};
+exports.StepStatus = {
+    PENDING: 'PENDING',
+    IN_PROGRESS: 'IN_PROGRESS',
+    APPROVED: 'APPROVED',
+    REJECTED: 'REJECTED'
+};
+exports.Role = {
+    SUPER_ADMIN: 'SUPER_ADMIN',
+    ADMIN: 'ADMIN',
+    PME: 'PME',
+    FINANCIER: 'FINANCIER'
 };
 //# sourceMappingURL=enums.js.map

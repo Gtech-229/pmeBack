@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.updateProjectSchema = exports.createProjectBodySchema = exports.createSubStepSchema = void 0;
+exports.updateProjectSchema = exports.createProjectBodySchema = exports.creditSchema = exports.createSubStepSchema = void 0;
 const zod_1 = require("zod");
 // ==========================
 // SubStep DTO & Zod Schema
@@ -22,47 +22,85 @@ exports.createSubStepSchema = zod_1.z.object({
 // ==========================
 // Project DTO & Zod Schema
 // ==========================
+exports.creditSchema = zod_1.z.object({
+    borrower: zod_1.z
+        .string()
+        .min(1, "nom dde l'emprunteur requis"),
+    amount: zod_1.z.coerce
+        .number()
+        .min(0, "Montant invalide"),
+    interestRate: zod_1.z.coerce
+        .number()
+        .min(0, "Taux invalide"),
+    dueDate: zod_1.z.string().datetime(),
+    monthlyPayment: zod_1.z.coerce
+        .number()
+        .min(0, "Mensualité invalide"),
+    remainingBalance: zod_1.z.coerce
+        .number()
+        .min(0, "Reste à payer invalide"),
+}).refine(d => d.remainingBalance <= d.amount, {
+    message: "Le reste à payer ne peut pas dépasser le montant du crédit",
+    path: ["remainingBalance"]
+});
 exports.createProjectBodySchema = zod_1.z.object({
     title: zod_1.z.string().min(3),
     description: zod_1.z.string().min(20),
-    requestedAmount: zod_1.z
-        .string()
-        .refine((val) => !isNaN(Number(val)) && Number(val) >= 0, "Montant demandé invalide")
-        .transform((val) => Number(val)),
-    credit: zod_1.z
-        .string()
-        .optional()
-        .refine((val) => val === undefined || (!isNaN(Number(val)) && Number(val) >= 0), "Montant du crédit invalide")
-        .transform((val) => (val !== undefined ? Number(val) : undefined)),
-    hasCredit: zod_1.z.enum(["true", "false"])
+    requestedAmount: zod_1.z.coerce
+        .number()
+        .min(0, "Montant demandé invalide"),
+    hasCredit: zod_1.z.enum(["true", "false"]),
+    credits: zod_1.z.array(exports.creditSchema).optional(),
+    campaignId: zod_1.z.string().uuid()
+})
+    .superRefine((data, ctx) => {
+    if (String(data.hasCredit) === "true" && (!data.credits || data.credits.length === 0)) {
+        ctx.addIssue({
+            code: zod_1.z.ZodIssueCode.custom,
+            path: ["credits"],
+            message: "Veuillez ajouter au moins un crédit",
+        });
+    }
 });
 exports.updateProjectSchema = zod_1.z.object({
-    title: zod_1.z
-        .string()
-        .min(3, 'Le titre doit contenir au moins 3 caractères')
-        .max(255),
-    description: zod_1.z
-        .string()
-        .min(10, 'La description est trop courte')
-        .max(5000),
-    requestedAmount: zod_1.z
-        .coerce
-        .number()
-        .positive('Le montant doit être positif'),
+    title: zod_1.z.string().min(3).max(255),
+    hasCredit: zod_1.z
+        .union([zod_1.z.boolean(), zod_1.z.string()])
+        .transform((val) => val === true || val === "true"),
+    description: zod_1.z.string().min(10).max(5000),
+    requestedAmount: zod_1.z.coerce.number().positive(),
     // ----------------------
-    // Existing documents
+    // DOCUMENTS
     // ----------------------
-    existingDocuments: zod_1.z
-        .array(zod_1.z.object({
-        id: zod_1.z.string().uuid('ID de document invalide'),
-        title: zod_1.z.string().min(2, 'Intitulé invalide')
-    }))
-        .optional(),
+    existingDocuments: zod_1.z.array(zod_1.z.object({
+        id: zod_1.z.string().uuid(),
+        title: zod_1.z.string().min(2)
+    })).optional(),
+    removedDocuments: zod_1.z.array(zod_1.z.string().uuid()).optional(),
     // ----------------------
-    // Removed documents
+    // CREDITS
     // ----------------------
-    removedDocuments: zod_1.z
-        .array(zod_1.z.string().uuid('ID de document invalide'))
-        .optional()
+    existingCredits: zod_1.z.array(zod_1.z.object({
+        id: zod_1.z.string().uuid(),
+        borrower: zod_1.z.string(),
+        amount: zod_1.z.coerce.number(),
+        interestRate: zod_1.z.coerce.number(),
+        monthlyPayment: zod_1.z.coerce.number(),
+        remainingBalance: zod_1.z.coerce.number(),
+        dueDate: zod_1.z.coerce.date()
+    })).optional(),
+    newCredits: zod_1.z.array(exports.creditSchema).optional(),
+    removedCredits: zod_1.z.array(zod_1.z.string().uuid()).optional(),
+    campaignId: zod_1.z.string().uuid()
+}).superRefine((data, ctx) => {
+    const hasAnyCredit = (data.newCredits && data.newCredits.length > 0) ||
+        (data.existingCredits && data.existingCredits.length > 0);
+    if (data.hasCredit && !hasAnyCredit) {
+        ctx.addIssue({
+            code: zod_1.z.ZodIssueCode.custom,
+            path: ["credits"],
+            message: "Veuillez ajouter au moins un crédit",
+        });
+    }
 });
 //# sourceMappingURL=project.schema.js.map

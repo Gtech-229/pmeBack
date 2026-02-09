@@ -48,7 +48,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.NullsOrder = exports.QueryMode = exports.SortOrder = exports.ReportDocumentScalarFieldEnum = exports.ReportSignatureScalarFieldEnum = exports.MeetingProjectDecisionScalarFieldEnum = exports.MeetingReportScalarFieldEnum = exports.MeetingPresenceScalarFieldEnum = exports.CommitteeMeetingScalarFieldEnum = exports.CommitteeMemberScalarFieldEnum = exports.CommitteeScalarFieldEnum = exports.SubStepScalarFieldEnum = exports.ActivityScalarFieldEnum = exports.DocumentScalarFieldEnum = exports.ProjectScalarFieldEnum = exports.PMEScalarFieldEnum = exports.RefreshTokenScalarFieldEnum = exports.RelationLoadStrategy = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
+exports.JsonNullValueFilter = exports.NullsOrder = exports.QueryMode = exports.NullableJsonNullValueInput = exports.SortOrder = exports.ProjectCreditScalarFieldEnum = exports.ReportDocumentScalarFieldEnum = exports.ReportSignatureScalarFieldEnum = exports.MeetingProjectDecisionScalarFieldEnum = exports.MeetingReportScalarFieldEnum = exports.MeetingPresenceScalarFieldEnum = exports.CommitteeMeetingScalarFieldEnum = exports.CommitteeMemberScalarFieldEnum = exports.CommitteeScalarFieldEnum = exports.CampaignStepScalarFieldEnum = exports.CampaignScalarFieldEnum = exports.ActivityScalarFieldEnum = exports.DocumentScalarFieldEnum = exports.ProjectStepProgressScalarFieldEnum = exports.ProjectStatusHistoryScalarFieldEnum = exports.ProjectScalarFieldEnum = exports.PMEScalarFieldEnum = exports.RefreshTokenScalarFieldEnum = exports.RelationLoadStrategy = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
 const runtime = __importStar(require("@prisma/client/runtime/index-browser"));
 exports.Decimal = runtime.Decimal;
 exports.NullTypes = {
@@ -79,9 +79,12 @@ exports.ModelName = {
     RefreshToken: 'RefreshToken',
     PME: 'PME',
     Project: 'Project',
+    ProjectStatusHistory: 'ProjectStatusHistory',
+    ProjectStepProgress: 'ProjectStepProgress',
     Document: 'Document',
     Activity: 'Activity',
-    SubStep: 'SubStep',
+    Campaign: 'Campaign',
+    CampaignStep: 'CampaignStep',
     Committee: 'Committee',
     CommitteeMember: 'CommitteeMember',
     CommitteeMeeting: 'CommitteeMeeting',
@@ -89,7 +92,8 @@ exports.ModelName = {
     MeetingReport: 'MeetingReport',
     MeetingProjectDecision: 'MeetingProjectDecision',
     ReportSignature: 'ReportSignature',
-    ReportDocument: 'ReportDocument'
+    ReportDocument: 'ReportDocument',
+    ProjectCredit: 'ProjectCredit'
 };
 /*
  * Enums
@@ -141,10 +145,12 @@ exports.PMEScalarFieldEnum = {
     website: 'website',
     logoUrl: 'logoUrl',
     logoId: 'logoId',
-    address: 'address',
-    city: 'city',
     country: 'country',
+    administrative: 'administrative',
+    city: 'city',
+    address: 'address',
     userRole: 'userRole',
+    activityField: 'activityField',
     ownerId: 'ownerId',
     isActive: 'isActive',
     createdAt: 'createdAt',
@@ -160,9 +166,26 @@ exports.ProjectScalarFieldEnum = {
     fundedAmount: 'fundedAmount',
     fundDisbursementDates: 'fundDisbursementDates',
     validatedAt: 'validatedAt',
-    credit: 'credit',
+    currentStepOrder: 'currentStepOrder',
     hasCredit: 'hasCredit',
-    submissionDate: 'submissionDate',
+    campaignId: 'campaignId',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.ProjectStatusHistoryScalarFieldEnum = {
+    id: 'id',
+    projectId: 'projectId',
+    status: 'status',
+    changedAt: 'changedAt',
+    createdAt: 'createdAt'
+};
+exports.ProjectStepProgressScalarFieldEnum = {
+    id: 'id',
+    projectId: 'projectId',
+    campaignStepId: 'campaignStepId',
+    status: 'status',
+    validatedAt: 'validatedAt',
+    comment: 'comment',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
@@ -174,6 +197,7 @@ exports.DocumentScalarFieldEnum = {
     mimeType: 'mimeType',
     size: 'size',
     projectId: 'projectId',
+    projectStepId: 'projectStepId',
     createdAt: 'createdAt'
 };
 exports.ActivityScalarFieldEnum = {
@@ -187,22 +211,31 @@ exports.ActivityScalarFieldEnum = {
     isRead: 'isRead',
     createdAt: 'createdAt'
 };
-exports.SubStepScalarFieldEnum = {
+exports.CampaignScalarFieldEnum = {
     id: 'id',
     name: 'name',
     description: 'description',
-    state: 'state',
-    dueDate: 'dueDate',
-    completedAt: 'completedAt',
-    remarks: 'remarks',
-    projectId: 'projectId',
+    start_date: 'start_date',
+    end_date: 'end_date',
+    status: 'status',
+    targetProjects: 'targetProjects',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
+};
+exports.CampaignStepScalarFieldEnum = {
+    id: 'id',
+    campaignId: 'campaignId',
+    name: 'name',
+    order: 'order',
+    setsProjectStatus: 'setsProjectStatus',
+    createdAt: 'createdAt'
 };
 exports.CommitteeScalarFieldEnum = {
     id: 'id',
     name: 'name',
     description: 'description',
+    campaignId: 'campaignId',
+    stepId: 'stepId',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
@@ -262,9 +295,25 @@ exports.ReportDocumentScalarFieldEnum = {
     publicId: 'publicId',
     createdAt: 'createdAt'
 };
+exports.ProjectCreditScalarFieldEnum = {
+    id: 'id',
+    borrower: 'borrower',
+    amount: 'amount',
+    interestRate: 'interestRate',
+    monthlyPayment: 'monthlyPayment',
+    remainingBalance: 'remainingBalance',
+    dueDate: 'dueDate',
+    projectId: 'projectId',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
 exports.SortOrder = {
     asc: 'asc',
     desc: 'desc'
+};
+exports.NullableJsonNullValueInput = {
+    DbNull: 'DbNull',
+    JsonNull: 'JsonNull'
 };
 exports.QueryMode = {
     default: 'default',
@@ -273,5 +322,10 @@ exports.QueryMode = {
 exports.NullsOrder = {
     first: 'first',
     last: 'last'
+};
+exports.JsonNullValueFilter = {
+    DbNull: 'DbNull',
+    JsonNull: 'JsonNull',
+    AnyNull: 'AnyNull'
 };
 //# sourceMappingURL=prismaNamespaceBrowser.js.map

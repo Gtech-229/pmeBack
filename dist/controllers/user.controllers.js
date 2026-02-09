@@ -117,7 +117,8 @@ exports.getUserById = (0, express_async_handler_1.default)(async (req, res) => {
             lastName: true,
             role: true,
             isActive: true,
-            createdAt: true
+            createdAt: true,
+            pme: true
         }
     });
     if (!user) {

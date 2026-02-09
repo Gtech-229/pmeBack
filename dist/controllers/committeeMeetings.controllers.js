@@ -10,6 +10,12 @@ const prisma_1 = require("../lib/prisma");
 const committee_schema_2 = require("../schemas/committee.schema");
 const combinateDateAndHour_1 = require("../utils/combinateDateAndHour");
 const UploadToCloudinary_1 = require("../utils/UploadToCloudinary");
+const sendEmail_1 = require("../utils/sendEmail");
+/**
+ * @description  Create a new committee
+ * @route POST /committee/meetings
+ * @access  Admin
+ * **/
 exports.createMeeting = (0, express_async_handler_1.default)(async (req, res) => {
     if (!req.user || !["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
         res.status(403);
@@ -67,7 +73,9 @@ exports.getMeetings = (0, express_async_handler_1.default)(async (req, res) => {
     // Vérifier que le comité existe
     const committee = await prisma_1.prisma.committee.findUnique({
         where: { id: committeeId },
-        select: { id: true },
+        select: {
+            id: true
+        },
     });
     if (!committee) {
         res.status(404);
@@ -103,7 +111,7 @@ exports.getMeetings = (0, express_async_handler_1.default)(async (req, res) => {
     res.status(200).json(data);
 });
 /**
- * @description get a meeting details
+ * @description get a single meeting details
  * @route GET /committee/meetings/:meetingId
  * @access Private
  */
@@ -162,7 +170,8 @@ exports.getMeetingDetails = (0, express_async_handler_1.default)(async (req, res
                         include: {
                             user: true
                         }
-                    }
+                    },
+                    step: true
                 }
             }
         },
@@ -215,9 +224,12 @@ exports.updateMeeting = (0, express_async_handler_1.default)(async (req, res) =>
         res.status(401);
         throw new Error("Unauthorized");
     }
-    console.log(req.body);
     // Validation Zod
     const data = committee_schema_1.updateMeetingSchema.parse(req.body);
+    if (!data) {
+        res.status(400);
+        throw new Error("Données invalides");
+    }
     //  Vérifier que la réunion existe
     const meeting = await prisma_1.prisma.committeeMeeting.findUnique({
         where: { id: meetingId },
@@ -301,19 +313,14 @@ exports.addMeetingReport = (0, express_async_handler_1.default)(async (req, res)
             },
         },
     });
-    if (!committeeMember) {
+    if (!committeeMember || committeeMember.memberRole !== "secretary") {
         res.status(403);
-        throw new Error("User is not a committee member");
-    }
-    //  Secrétaire uniquement
-    if (committeeMember.memberRole !== "secretary") {
-        res.status(403);
-        throw new Error("Only the committee secretary can submit the meeting report");
+        throw new Error("Seul(e) le sécrétaire  du comité est autorisé(e) à soumettre un rapport");
     }
     //  Empêcher doublon
     if (meeting.report) {
         res.status(409);
-        throw new Error("Meeting report already exists");
+        throw new Error("Un rapport a déjà été soumis pour cette réunion");
     }
     // Valider les membres presents
     // vérifier que les membres appartiennent bien au comité
@@ -323,6 +330,10 @@ exports.addMeetingReport = (0, express_async_handler_1.default)(async (req, res)
             committeeId: meeting.committeeId,
         },
     });
+    if (!validMembers) {
+        res.status(409);
+        throw new Error("Les membres presents associés au rapport ne font pas partir du comité");
+    }
     const report = await prisma_1.prisma.$transaction(async (tx) => {
         const report = await tx.meetingReport.create({
             data: {
@@ -377,7 +388,11 @@ exports.addMeetingReport = (0, express_async_handler_1.default)(async (req, res)
         data: report,
     });
 });
-/****/
+/**
+ * @description Sign a meeting's report
+ * @route
+ * @access Present members
+ * **/
 exports.signReport = (0, express_async_handler_1.default)(async (req, res) => {
     if (!req.user?.id) {
         res.status(401);
@@ -414,17 +429,22 @@ exports.signReport = (0, express_async_handler_1.default)(async (req, res) => {
             },
         },
     });
-    if (!report || report.status !== 'DRAFT') {
+    if (!report) {
         res.status(404);
-        throw new Error('Meeting report not found or not signable');
+        throw new Error('Rapport non trouvé');
     }
-    /**
-   * Vérifier que l'utilisateur est présent à la réunion
+    if (!report || report.status !== 'DRAFT') {
+        res.status(409);
+        throw new Error('Meeting report not signable');
+    }
+    /*
+    *
+     * Vérifier que l'utilisateur est présent à la réunion
    */
     const presence = report.meeting.presences.find((p) => p.member.userId === userId);
     if (!presence) {
         res.status(403);
-        throw new Error('Only present members can sign the report');
+        throw new Error('seuls les membres présents sont autorisés à signer le rapport');
     }
     const memberId = presence.memberId;
     /**
@@ -433,7 +453,7 @@ exports.signReport = (0, express_async_handler_1.default)(async (req, res) => {
     const alreadySigned = report.signatures.some((signature) => signature.memberId === memberId);
     if (alreadySigned) {
         res.status(409);
-        throw new Error('You have already signed this report');
+        throw new Error("Vous ne pouvez signer un rapport plus d'une fois");
     }
     /**
      * Créer la signature
@@ -462,87 +482,138 @@ exports.signReport = (0, express_async_handler_1.default)(async (req, res) => {
      * - appliquer toutes les décisions
      */
     await prisma_1.prisma.$transaction(async (tx) => {
-        /**
-         * 1. Mettre à jour le statut du rapport
-         */
-        await tx.meetingReport.update({
-            where: { id: report.id },
+        // 1️⃣ Mettre à jour le statut du rapport
+        const updated = await tx.meetingReport.updateMany({
+            where: { id: report.id, status: 'DRAFT' },
             data: { status: 'APPLIED' },
         });
-        /**
-         * 2. Récupérer les décisions de projets
-         */
+        // Si déjà appliqué ailleurs → stop
+        if (updated.count === 0)
+            return;
+        // 2️⃣ Récupérer les décisions de projets
         const decisions = await tx.meetingProjectDecision.findMany({
             where: { reportId: report.id },
         });
-        /**
-         * 3. Appliquer les décisions projet par projet
-         */
+        // Queue d'emails à envoyer après transaction
         const emailQueue = [];
         for (const decision of decisions) {
-            let newStatus = null;
-            let activityType = null;
-            let activityTitle = '';
-            let activityMessage = '';
-            switch (decision.decision) {
-                case 'approved':
-                    newStatus = 'approved';
-                    activityType = 'PROJECT_APPROVED';
-                    activityTitle = 'Projet approuvé';
-                    activityMessage = 'Votre projet a été approuvé suite à la réunion du comité.';
-                    break;
-                case 'rejected':
-                    newStatus = 'rejected';
-                    activityType = 'PROJECT_REJECTED';
-                    activityTitle = 'Projet rejeté';
-                    activityMessage = 'Votre projet a été rejeté suite à la réunion du comité.';
-                    break;
-            }
-            if (!newStatus || !activityType)
-                continue;
-            /**
-             * 1. Mettre à jour le projet
-             */
-            const project = await tx.project.update({
+            const project = await tx.project.findUnique({
                 where: { id: decision.projectId },
-                data: { status: newStatus },
                 include: {
-                    pme: true
+                    stepProgress: { include: { campaignStep: true }, orderBy: { campaignStep: { order: 'asc' } } },
+                    pme: true,
+                    campaign: true,
                 },
             });
-            /**
-             * 2. Créer l'activité
-             */
+            if (!project)
+                continue;
+            // Étape en cours
+            const currentStep = project.stepProgress.find((s) => s.status === 'IN_PROGRESS');
+            if (!currentStep)
+                continue;
+            const isApproved = decision.decision === 'approved';
+            const committeeComment = decision.note ?? null;
+            // 3️⃣ Mettre à jour l’étape actuelle
+            await tx.projectStepProgress.update({
+                where: { id: currentStep.id },
+                data: {
+                    status: isApproved ? 'APPROVED' : 'REJECTED',
+                    validatedAt: new Date(),
+                    comment: committeeComment,
+                },
+            });
+            // 4️⃣ Déterminer le nouveau statut global
+            let newProjectStatus = null;
+            let nextStepOrder = null;
+            if (isApproved) {
+                // ✅ Step définit un statut global → priorité
+                if (currentStep.campaignStep.setsProjectStatus) {
+                    newProjectStatus = currentStep.campaignStep.setsProjectStatus;
+                }
+                else {
+                    // Sinon, dernière étape validée → completed
+                    const nextStep = project.stepProgress.find((s) => s.campaignStep.order === currentStep.campaignStep.order + 1);
+                    if (!nextStep)
+                        newProjectStatus = 'completed';
+                    else
+                        nextStepOrder = nextStep.campaignStep.order;
+                }
+                // Activer l’étape suivante si elle existe
+                if (nextStepOrder) {
+                    const nextStep = project.stepProgress.find((s) => s.campaignStep.order === nextStepOrder);
+                    if (nextStep) {
+                        await tx.projectStepProgress.update({
+                            where: { id: nextStep.id },
+                            data: { status: 'IN_PROGRESS' },
+                        });
+                    }
+                }
+            }
+            else {
+                // Rejet → statut global forcé
+                newProjectStatus = 'rejected';
+            }
+            // 5️⃣ Mise à jour du projet + historique
+            if (newProjectStatus) {
+                await tx.project.update({
+                    where: { id: project.id },
+                    data: {
+                        status: newProjectStatus,
+                        currentStepOrder: newProjectStatus === 'completed'
+                            ? null
+                            : nextStepOrder ?? currentStep.campaignStep.order,
+                    },
+                });
+                // Historique des statuts
+                await tx.projectStatusHistory.create({
+                    data: {
+                        projectId: project.id,
+                        status: newProjectStatus,
+                        changedAt: new Date(),
+                    },
+                });
+            }
+            //  Créer activité utilisateur
             await tx.activity.create({
                 data: {
-                    type: activityType,
-                    title: activityTitle,
-                    message: activityMessage,
+                    type: isApproved ? 'PROJECT_APPROVED' : 'PROJECT_REJECTED',
+                    title: isApproved
+                        ? 'Nouvelle étape validée'
+                        : 'Décision du comité concernant votre projet',
+                    message: isApproved
+                        ? `Félicitations ! Votre projet <strong>${project.title}</strong> a passé avec succès l'étape "${currentStep.campaignStep.name}".`
+                        : `Nous vous informons que l’étape "${currentStep.campaignStep.name}" n’a pas été validée par le comité. Vous pouvez consulter les observations associées pour plus de détails.`,
                     userId: project.pme.ownerId,
                     projectId: project.id,
                     pmeId: project.pmeId ?? undefined,
                 },
             });
-            /**
-             * 3. Préparer email (envoyé après la transaction)
-             */
+            // 7️⃣ Préparer l'email
             emailQueue.push({
                 to: project.pme.email,
-                subject: activityTitle,
-                html: `
-      <p>Bonjour ${project.pme.name},</p>
-      <p>${activityMessage}</p>
-      <p>
-        Projet concerné : <strong>${project.title}</strong>
-      </p>
-      <p>Cordialement,<br/>L’équipe</p>
-    `,
+                subject: isApproved ? 'Votre projet avance' : 'Mise à jour sur votre projet',
+                html: isApproved
+                    ? `<p>Bonjour ${project.pme.name},</p>
+           <p>Bonne nouvelle ! Votre projet passe à l'étape suivante : "${currentStep.campaignStep.name}".</p>
+           <p><strong>Projet :</strong> ${project.title}</p>
+           ${committeeComment ? `<p><strong>Note du comité :</strong> ${committeeComment}</p>` : ''}
+           <p>Cordialement,<br>L’équipe</p>`
+                    : `<p>Bonjour ${project.pme.name},</p>
+           <p>Une étape de votre projet n’a pas été validée : "${currentStep.campaignStep.name}".</p>
+           <p><strong>Projet :</strong> ${project.title}</p>
+           ${committeeComment ? `<p><strong>Note du comité :</strong> ${committeeComment}</p>` : ''}
+           <p>Cordialement,<br>L’équipe</p>`,
             });
         }
-        /**
-         * 4. (OPTIONNEL) Historique / audit
-         */
-        // await tx.projectHistory.createMany(...)
+        // envoyer les emails après la transaction
+        for (const email of emailQueue) {
+            try {
+                await (0, sendEmail_1.sendEmail)(email);
+            }
+            catch (err) {
+                console.error(`Failed to send email to ${email.to}`, err);
+            }
+        }
     });
     res.status(200).json({
         message: 'Report signed and applied successfully',

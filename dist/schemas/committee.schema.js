@@ -5,6 +5,7 @@ const zod_1 = require("zod");
 const enums_1 = require("../generated/prisma/enums");
 exports.createCommitteeSchema = zod_1.z.object({
     name: zod_1.z.string().min(3, "Le nom du comité est requis"),
+    stepId: zod_1.z.string().uuid(),
     description: zod_1.z.string(),
     members: zod_1.z.array(zod_1.z.object({
         userId: zod_1.z.string().uuid(),
