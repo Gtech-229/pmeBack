@@ -7,6 +7,8 @@ import { createMeetingReportSchema } from "../schemas/committee.schema"
 import { combineDateAndTime } from "../utils/combinateDateAndHour"
 import { uploadToCloudinary } from "../utils/UploadToCloudinary"
 import { ActivityType } from "generated/prisma/enums"
+import { sendEmail } from "utils/sendEmail"
+
 
 /**
  * @description  Create a new committee
@@ -389,21 +391,17 @@ export const addMeetingReport = asyncHandler(
       },
     })
 
-    if (!committeeMember) {
+    if (!committeeMember || committeeMember.memberRole !== "secretary") {
       res.status(403)
-      throw new Error("User is not a committee member")
+      throw new Error("Seul(e) le sécrétaire  du comité est autorisé(e) à soumettre un rapport")
     }
 
-    //  Secrétaire uniquement
-    if (committeeMember.memberRole !== "secretary") {
-      res.status(403)
-      throw new Error("Only the committee secretary can submit the meeting report")
-    }
+  
 
     //  Empêcher doublon
     if (meeting.report) {
       res.status(409)
-      throw new Error("Meeting report already exists")
+      throw new Error("Un rapport a déjà été soumis pour cette réunion")
     }
 
 
@@ -420,6 +418,11 @@ const validMembers = await prisma.committeeMember.findMany({
     committeeId: meeting.committeeId,
   },
 })
+
+if(!validMembers){
+  res.status(409)
+  throw new Error("Les membres presents associés au rapport ne font pas partir du comité")
+}
 
 
 
@@ -503,7 +506,11 @@ const report =await prisma.$transaction(async (tx) => {
 )
 
 
-/****/ 
+/**
+ * @description Sign a meeting's report
+ * @route 
+ * @access Present members
+ * **/ 
 
 
 export const signReport = asyncHandler(async (req: AuthRequest, res: Response) => {
@@ -548,7 +555,7 @@ export const signReport = asyncHandler(async (req: AuthRequest, res: Response) =
 
 if(!report){
   res.status(404)
-   throw new Error('Meeting report not found')
+   throw new Error('Rapport non trouvé')
 
 }
 
@@ -567,7 +574,7 @@ const presence = report.meeting.presences.find(
 
 if (!presence) {
   res.status(403)
-  throw new Error('Only present members can sign the report')
+  throw new Error('seuls les membres présents sont autorisés à signer le rapport')
 }
 
 const memberId = presence.memberId
@@ -581,7 +588,7 @@ const alreadySigned = report.signatures.some(
 
 if (alreadySigned) {
   res.status(409)
-  throw new Error('You have already signed this report')
+  throw new Error("Vous ne pouvez signer un rapport plus d'une fois")
 }
 
 /**
@@ -617,104 +624,158 @@ if (!allSigned) {
  * - appliquer toutes les décisions
  */
 await prisma.$transaction(async (tx) => {
-  /**
-   * 1. Mettre à jour le statut du rapport
-   */
-  await tx.meetingReport.update({
-    where: { id: report.id },
+  // 1️⃣ Mettre à jour le statut du rapport
+  const updated = await tx.meetingReport.updateMany({
+    where: { id: report.id, status: 'DRAFT' },
     data: { status: 'APPLIED' },
   })
 
-  /**
-   * 2. Récupérer les décisions de projets
-   */
+  // Si déjà appliqué ailleurs → stop
+  if (updated.count === 0) return
+
+  // 2️⃣ Récupérer les décisions de projets
   const decisions = await tx.meetingProjectDecision.findMany({
     where: { reportId: report.id },
   })
 
-  /**
-   * 3. Appliquer les décisions projet par projet
-   */
+  // Queue d'emails à envoyer après transaction
+  const emailQueue: { to: string; subject: string; html: string }[] = []
 
-  const emailQueue: {
-  to: string
-  subject: string
-  html: string
-}[] = []
+  for (const decision of decisions) {
+    const project = await tx.project.findUnique({
+      where: { id: decision.projectId },
+      include: {
+        stepProgress: { include: { campaignStep: true }, orderBy: { campaignStep: { order: 'asc' } } },
+        pme: true,
+        campaign: true,
+      },
+    })
 
- for (const decision of decisions) {
-  let newStatus: ProjectStatus | null = null
-  let activityType: ActivityType | null = null
-  let activityTitle = ''
-  let activityMessage = ''
+    if (!project) continue
 
-  switch (decision.decision) {
-    case 'approved':
-      newStatus = 'approved'
-      activityType = 'PROJECT_APPROVED'
-      activityTitle = 'Projet approuvé'
-      activityMessage = 'Votre projet a été approuvé suite à la réunion du comité.'
-      break
+    // Étape en cours
+    const currentStep = project.stepProgress.find((s) => s.status === 'IN_PROGRESS')
+    if (!currentStep) continue
 
-    case 'rejected':
-      newStatus = 'rejected'
-      activityType = 'PROJECT_REJECTED'
-      activityTitle = 'Projet rejeté'
-      activityMessage = 'Votre projet a été rejeté suite à la réunion du comité.'
-      break
+    const isApproved = decision.decision === 'approved'
+    const committeeComment = decision.note ?? null
+
+    // 3️⃣ Mettre à jour l’étape actuelle
+    await tx.projectStepProgress.update({
+      where: { id: currentStep.id },
+      data: {
+        status: isApproved ? 'APPROVED' : 'REJECTED',
+        validatedAt: new Date(),
+        comment: committeeComment,
+      },
+    })
+
+    // 4️⃣ Déterminer le nouveau statut global
+    let newProjectStatus: ProjectStatus | null = null
+    let nextStepOrder: number | null = null
+
+    if (isApproved) {
+      // ✅ Step définit un statut global → priorité
+      if (currentStep.campaignStep.setsProjectStatus) {
+        newProjectStatus = currentStep.campaignStep.setsProjectStatus
+      } else {
+        // Sinon, dernière étape validée → completed
+        const nextStep = project.stepProgress.find(
+          (s) => s.campaignStep.order === currentStep.campaignStep.order + 1
+        )
+        if (!nextStep) newProjectStatus = 'completed'
+        else nextStepOrder = nextStep.campaignStep.order
+      }
+
+      // Activer l’étape suivante si elle existe
+      if (nextStepOrder) {
+        const nextStep = project.stepProgress.find((s) => s.campaignStep.order === nextStepOrder)
+        if (nextStep) {
+          await tx.projectStepProgress.update({
+            where: { id: nextStep.id },
+            data: { status: 'IN_PROGRESS' },
+          })
+        }
+      }
+    } else {
+      // Rejet → statut global forcé
+      newProjectStatus = 'rejected'
+    }
+
+    // 5️⃣ Mise à jour du projet + historique
+    if (newProjectStatus) {
+      await tx.project.update({
+        where: { id: project.id },
+        data: {
+          status: newProjectStatus,
+          currentStepOrder:
+            newProjectStatus === 'completed'
+              ? null
+              : nextStepOrder ?? currentStep.campaignStep.order,
+        },
+      })
+
+      // Historique des statuts
+      await tx.projectStatusHistory.create({
+        data: {
+          projectId: project.id,
+          status: newProjectStatus,
+          changedAt: new Date(),
+        },
+      })
+    }
+
+    //  Créer activité utilisateur
+    await tx.activity.create({
+      data: {
+        type: isApproved ? 'PROJECT_APPROVED' : 'PROJECT_REJECTED',
+        title: isApproved
+          ? 'Nouvelle étape validée'
+          : 'Décision du comité concernant votre projet',
+        message: isApproved
+          ? `Félicitations ! Votre projet <strong>${project.title}</strong> a passé avec succès l'étape "${currentStep.campaignStep.name}".`
+          : `Nous vous informons que l’étape "${currentStep.campaignStep.name}" n’a pas été validée par le comité. Vous pouvez consulter les observations associées pour plus de détails.`,
+        userId: project.pme.ownerId,
+        projectId: project.id,
+        pmeId: project.pmeId ?? undefined,
+      },
+    })
+
+    // 7️⃣ Préparer l'email
+    emailQueue.push({
+      to: project.pme.email,
+      subject: isApproved ? 'Votre projet avance' : 'Mise à jour sur votre projet',
+      html: isApproved
+        ? `<p>Bonjour ${project.pme.name},</p>
+           <p>Bonne nouvelle ! Votre projet passe à l'étape suivante : "${currentStep.campaignStep.name}".</p>
+           <p><strong>Projet :</strong> ${project.title}</p>
+           ${committeeComment ? `<p><strong>Note du comité :</strong> ${committeeComment}</p>` : ''}
+           <p>Cordialement,<br>L’équipe</p>`
+        : `<p>Bonjour ${project.pme.name},</p>
+           <p>Une étape de votre projet n’a pas été validée : "${currentStep.campaignStep.name}".</p>
+           <p><strong>Projet :</strong> ${project.title}</p>
+           ${committeeComment ? `<p><strong>Note du comité :</strong> ${committeeComment}</p>` : ''}
+           <p>Cordialement,<br>L’équipe</p>`,
+    })
   }
 
-  if (!newStatus || !activityType) continue
-
-  /**
-   * 1. Mettre à jour le projet
-   */
-  const project = await tx.project.update({
-    where: { id: decision.projectId },
-    data: { status: newStatus },
-    include: {
-      pme: true
+  // envoyer les emails après la transaction
+   for (const email of emailQueue) {
+    try {
+      await sendEmail(email)
+    } catch (err) {
+      console.error(`Failed to send email to ${email.to}`, err)
       
-    },
-  })
-
-  /**
-   * 2. Créer l'activité
-   */
-  await tx.activity.create({
-    data: {
-      type: activityType,
-      title: activityTitle,
-      message: activityMessage,
-      userId: project.pme.ownerId,
-      projectId: project.id,
-      pmeId: project.pmeId ?? undefined,
-    },
-  })
-
-  /**
-   * 3. Préparer email (envoyé après la transaction)
-   */
-  emailQueue.push({
-    to: project.pme.email,
-    subject: activityTitle,
-    html: `
-      <p>Bonjour ${project.pme.name},</p>
-      <p>${activityMessage}</p>
-      <p>
-        Projet concerné : <strong>${project.title}</strong>
-      </p>
-      <p>Cordialement,<br/>L’équipe</p>
-    `,
-  })
-}
+    }
+  }
 
 
-  /**
-   * 4. (OPTIONNEL) Historique / audit
-   */
-  // await tx.projectHistory.createMany(...)
+
 })
+
+
+
+
 
 res.status(200).json({
   message: 'Report signed and applied successfully',

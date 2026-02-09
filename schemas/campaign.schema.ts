@@ -1,6 +1,14 @@
 // src/schemas/campaign/createCampaign.schema.ts
 import { z } from "zod"
 import { CampaignStatus } from "../generated/prisma/enums"
+export const PROJECT_STATUSES = [
+  "pending",
+  "approved",
+  "rejected",
+  "funded",
+  "completed",
+  "failed",
+] as const
 
 export const createCampaignSchema = z.object({
   
@@ -49,7 +57,10 @@ export const createCampaignStepsSchema = z.object({
     error : (iss) => iss.input === undefined ? "L'order est requis" : "Champ order invalide"
   }),
 
-  campaignId : z.string().uuid()
+  campaignId : z.string().uuid(), 
+
+  setsProjectStatus: z.enum(PROJECT_STATUSES).optional(),
+
 
 })
 

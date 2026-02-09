@@ -49,7 +49,8 @@ export type ProjectStatus =
   | "rejected"     // projet refusé
   | "funded"       // fonds débloqués
   | "completed"    // projet terminé avec succès
-  | "failed";      // projet échoué ou collaboration rompue
+  | "failed"
+  | "suspended"     // projet échoué ou collaboration rompue
 
 export type ProjectSubStepState = "pending" | "in_progress" | "validated" | "failed";
 

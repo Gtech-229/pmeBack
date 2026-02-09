@@ -248,6 +248,9 @@ model CampaignStep {
   order       Int
 
   committee   Committee?    
+
+  setsProjectStatus   ProjectStatus?   
+ 
  
   createdAt   DateTime @default(now())
    projectSteps ProjectStepProgress[]

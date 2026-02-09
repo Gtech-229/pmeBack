@@ -154,32 +154,19 @@ export const getCampaignById = asyncHandler(
  */
 export const createCampaignSteps = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    const parsed = createCampaignStepsSchema.safeParse(req.body)
 
-      const parsed = createCampaignStepsSchema.safeParse(req.body)
-
-         if (!parsed.success) {
+    if (!parsed.success) {
       res.status(400)
       throw parsed.error
     }
 
-
-    const {order, name, campaignId } = parsed.data
+    const { order, name, campaignId, setsProjectStatus } = parsed.data
 
     if (!req.user) {
       res.status(403)
       throw new Error("Access denied")
     }
-
-    if (!campaignId) {
-      res.status(400)
-      throw new Error("No campaign id")
-    }
-   
- 
-
-   
-
-    
 
     // Vérifier que la campagne existe
     const campaign = await prisma.campaign.findUnique({
@@ -191,34 +178,30 @@ export const createCampaignSteps = asyncHandler(
       throw new Error("Campaign not found")
     }
 
-
-    // (optionnel mais recommandé) bloquer si des steps existent déjà
+    // Vérifier qu’un step avec le même ordre n’existe pas déjà
     const existingStep = await prisma.campaignStep.findFirst({
-      where: { campaignId , order},
+      where: { campaignId, order },
     })
 
     if (existingStep) {
       res.status(409)
-      throw new Error("step existant a lordre renseigne ")
+      throw new Error("Une étape existe déjà avec cet ordre")
     }
-  
 
-    // Création du step
-    await prisma.campaignStep.create({
-      data : {
+    // ✅ Création du step avec impact métier optionnel
+    const step = await prisma.campaignStep.create({
+      data: {
         name,
         order,
-        campaignId
+        campaignId,
+        setsProjectStatus: setsProjectStatus ?? null, 
       },
-      include : {
-        campaign : true
-      }
     })
 
-
-    res.status(201).json("Created successfully")
+    res.status(201).json(step)
   }
 )
+
 
 
 /**
