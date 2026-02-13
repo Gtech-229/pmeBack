@@ -2,7 +2,7 @@ import asyncHandler from "express-async-handler"
 import { prisma } from "../lib/prisma"
 import { Request, Response } from "express"
 import {createUserSchema, updateUserSchema, roleEnum} from '../schemas/user.schemas'
-import { hashPassword } from "../utils/password"
+import { comparePassword, hashPassword } from "../utils/password"
 import { AuthRequest } from "../types"
 import { UpdateUserDTO } from "../types/user.dto"
 import { generateRefreshToken, generateToken } from "../utils/auth"
@@ -17,7 +17,7 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
   const data = createUserSchema.parse(req.body)
 
   const existingUser = await prisma.user.findUnique({
-    where: { email: data.email }
+    where: { email: data.email}
   })
 
   if (existingUser) {
@@ -79,7 +79,7 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
    // Set refresh token in httpOnly cookie
   res.cookie("refreshToken", refreshTkn, {
     httpOnly: true,
-    secure: process.env.NODE_ENV !== 'development',
+    secure: process.env.NODE_ENV === 'production',
     sameSite: "strict",
     maxAge: 7 * 24 * 60 * 60 * 1000
   });
@@ -95,7 +95,7 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
 
 
 
-  res.status(201).json(user)
+  res.status(201).json({msg : "Created"})
 })
 
 /**
@@ -107,7 +107,7 @@ export const getUsers = asyncHandler(async (req:AuthRequest , res: Response) => 
 
   if(!req.user?.id  || !["SUPER_ADMIN","ADMIN"].includes(req.user?.role)){
     res.status(401)
-    throw new Error("Not authorized")
+    throw new Error("Acces refusé")
   }
 
 
@@ -124,6 +124,10 @@ export const getUsers = asyncHandler(async (req:AuthRequest , res: Response) => 
 
   res.status(200).json(users)
 })
+
+
+
+
 
 /**
  *@desc  GET user by id

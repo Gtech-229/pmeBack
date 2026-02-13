@@ -12,7 +12,7 @@ export const createPMESchema = fullOnboardingSchema.strict()
 
 /**
  * @description : Set a user's account as validated and create his PME
- * @Route : POST/
+ * @Route : POST/api/onboarding/pme
  */
 export const validateAccount = asyncHandler(
   async (req: AuthRequest, res: Response) => {
@@ -23,8 +23,8 @@ export const validateAccount = asyncHandler(
     }
 
     const userId = req.user.id
-console.log("req body:", req.body)
-    // 🔹 Zod validation
+
+    //  Zod validation
     const parsed = createPMESchema.safeParse(req.body)
 
     if (!parsed.success) {
@@ -34,7 +34,7 @@ console.log("req body:", req.body)
 
     const data = parsed.data
     
-    // 🔹 Normalisation localisation
+   
     // Si administrative existe et contient des clés, on la garde
     // Sinon on met administrative à null et on garde city
     const hasAdministrative =
@@ -58,7 +58,7 @@ console.log("req body:", req.body)
 
   
 
-    // 🔹 Vérification de l'utilisateur
+    //  Vérification de l'utilisateur
     const user = await prisma.user.findUnique({
       where: { id: userId },
       select: {
@@ -84,7 +84,7 @@ console.log("req body:", req.body)
 
 
 
-    // 🔹 Transaction Prisma
+    // Transaction Prisma
     await prisma.$transaction([
 
 
@@ -131,6 +131,7 @@ console.log("req body:", req.body)
   }
 )
 
+
 /**
  * @description : Get the connected user's pme Details
  * @route : GET/api/onboarding/pme
@@ -153,7 +154,7 @@ export const getPme = asyncHandler(async (req: AuthRequest, res: Response) => {
         ownerId: req.user.id,
       },
       relationLoadStrategy : 'join',
-// Order when pme 'll be able to get many projects
+
       include : {
 projects : {
   include : {

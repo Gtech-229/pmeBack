@@ -5,7 +5,13 @@ import { Response } from "express"
 import { generateToken, generateRefreshToken } from "../utils/auth"
 import { comparePassword, hashPassword } from "../utils/password"
 
-const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => {
+
+/**
+ * @description Update the client session token
+ * @route POST/auth/refresh
+ * @access Private 
+ * **/ 
+export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => {
 
   const userId = req.userId
   const refreshTokenPlain = req.cookies.refreshToken
@@ -16,7 +22,7 @@ const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => 
   }
 
   
-  // 1️⃣ Récupérer tous les refresh tokens ACTIFS du user
+  //  Récupérer tous les refresh tokens ACTIFS du user
   const storedTokens = await prisma.refreshToken.findMany({
     where: {
       userId,
@@ -30,7 +36,7 @@ const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => 
     throw new Error("No valid refresh token found")
   }
 
-  // 2️⃣ Trouver le token correspondant (bcrypt compare)
+  //  Trouver le token correspondant (bcrypt compare)
   let matchedToken: typeof storedTokens[number] | null = null
 
   for (const token of storedTokens) {
@@ -41,9 +47,9 @@ const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => 
     }
   }
 
-  // 3️⃣ Reuse attack detection
+  //  Reuse attack detection
   if (!matchedToken) {
-    // 🔥 quelqu’un tente d’utiliser un token déjà révoqué
+    //  quelqu’un tente d’utiliser un token déjà révoqué
     await prisma.refreshToken.updateMany({
       where: { userId },
       data: { revokedAt: new Date() }
@@ -53,7 +59,7 @@ const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => 
     throw new Error("Refresh token reuse detected")
   }
 
-   // 4️⃣ Révoquer l'ancien refresh token
+   //  Révoquer l'ancien refresh token
   await prisma.refreshToken.update({
     where: { id: matchedToken.id },
     data: { revokedAt: new Date() }
@@ -61,7 +67,7 @@ const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => 
 
   
 
-  // 3️⃣ Récupérer l'utilisateur
+  //  Récupérer l'utilisateur
   const user = await prisma.user.findUnique({
     where: { id: userId }
   })
@@ -71,7 +77,7 @@ const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => 
     throw new Error("User not found")
   }
 
-  // 4️⃣ Générer nouveaux tokens
+  //  Générer nouveaux tokens
   const newAccessToken = generateToken({
     id: user.id,
     role: user.role
@@ -81,7 +87,7 @@ const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => 
   const newRefreshToken = generateRefreshToken(user.id)
    const hashedNewRefreshToken = await hashPassword(newRefreshToken)
    
-  // 5️⃣ Sauvegarder le NOUVEAU refresh token
+  //  Sauvegarder le NOUVEAU refresh token
   await prisma.refreshToken.create({
     data: {
       token: hashedNewRefreshToken,
@@ -90,7 +96,7 @@ const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => 
     }
   })
 
-  // 6️⃣ Mettre le refresh token en cookie
+  //  Mettre le refresh token en cookie
   res.cookie("refreshToken", newRefreshToken, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
@@ -100,4 +106,4 @@ const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => 
   res.json({ accessToken: newAccessToken })
 })
 
-export { refreshToken }
+

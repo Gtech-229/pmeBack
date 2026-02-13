@@ -38,15 +38,21 @@ export const createProject = asyncHandler(
 
     /* ---------------- BODY PARSING ---------------- */
 
-    let credits
+    let requestcredits
     try {
-      credits = req.body.credits ? JSON.parse(req.body.credits) : undefined
+      requestcredits = req.body.credits ? JSON.parse(req.body.credits) : undefined
     } catch {
       res.status(400)
       throw new Error("Format JSON invalide pour les crédits")
     }
 
-    const bodyToValidate = { ...req.body, credits }
+   
+
+    const bodyToValidate = { ...req.body, credits:requestcredits }
+
+
+   
+
 
     const parsedBody = createProjectBodySchema.safeParse(bodyToValidate)
     if (!parsedBody.success) {
@@ -60,7 +66,7 @@ export const createProject = asyncHandler(
       requestedAmount,
       hasCredit,
       campaignId,
-      credits: parsedCredits
+      credits 
     } = parsedBody.data
 
     
@@ -144,11 +150,29 @@ export const createProject = asyncHandler(
     throw new Error("Aucune étape initiale trouvée")
   }
 
+
+
   return {
     project: createdProject,
     firstStepId
   }
 })
+
+
+  if(credits && Array.isArray(credits) && credits.length > 0 ){
+    await prisma.projectCredit.createMany({
+      data : credits.map((c) => ({
+        borrower : c.borrower,
+        amount : Number(c.amount),
+        interestRate : Number(c.interestRate),
+        monthlyPayment : Number(c.monthlyPayment),
+        dueDate : new Date(c.dueDate),
+        remainingBalance : Number(c.remainingBalance),
+        projectId : project.project.id
+
+      }))
+    })
+  }
 
 
 
@@ -273,7 +297,7 @@ export const getProjects = asyncHandler(
       where.campaignId = campaign
     }
 
-    // ⚡ Fetch data + count in one transaction
+    //  Fetch data + count in one transaction
     const [projects, total] = await prisma.$transaction([
       prisma.project.findMany({
         where,
@@ -317,7 +341,7 @@ export const getProjects = asyncHandler(
 export const getProject = asyncHandler( async (req: Request, res: Response)=> {
 
     const id = req.params.id;
-    console.log(id)
+  
     if(!id){
       res.status(400)
       throw new Error("No id specified on the request")
@@ -649,89 +673,3 @@ if (!currentStep) {
 })
 
 
-/**
- * @description Update project status
- * @route PATCH /projects/:id/status
- * @access Private
- */
-export const changeStatus = asyncHandler(
-  async (req: AuthRequest, res: Response) => {
-  //   const { id } = req.params
-  //   const { status } = req.body
-
-  //   if (!id) throw new Error("Project id required")
-
-  //   if (status !== "approved") {
-  //     // status (rejected, funded, .....)
-  //     const project = await prisma.project.update({
-  //       where: { id },
-  //       data: { status },
-        
-  //     })
-
-  //     res.status(200).json(project)
-  //   }
-
-  //   // when status === approved
-
-  //   const project = await prisma.project.findUnique({
-  //     where: { id },
-     
-  //   })
-
-  //   if (!project) throw new Error("Project not found")
-  // //  Avoid double validatons
-  //   // const alreadyValidated = project.validatedBy.some(
-  //   //   (u) => u.id === req.user!.id
-  //   // )
-
-  //   // if (alreadyValidated) {
-  //   //   res.status(400)
-  //   //   throw new Error("Already validated by this user")
-  //   // }
-
-  //   // add validator
-  //   await prisma.project.update({
-  //     where: { id },
-  //     data: {
-  //       validatedBy: {
-  //         connect: { id: req.user!.id },
-  //       },
-  //     },
-  //   })
-
-  //   //  re-fetch validators
-  //   const updatedProject = await prisma.project.findUnique({
-  //     where: { id },
-  //     include: {
-  //       validatedBy: true,
-        
-  //     },
-  //   })
-
-  //   // Amount of admin and super admin that approved the project
-  //   const adminsCount = updatedProject!.validatedBy.filter(
-  //     (u) => u.role === "ADMIN"
-  //   ).length
-
-  //   const hasSuperAdmin = updatedProject!.validatedBy.some(
-  //     (u) => u.role === "SUPER_ADMIN"
-  //   )
-  //     // Mark as approved
-  //   if (adminsCount >= 2 && hasSuperAdmin) {
-  //     const approvedProject = await prisma.project.update({
-  //       where: { id },
-  //       data: {
-  //         status: "approved",
-  //         validatedAt: new Date(),
-  //       },
-        
-  //     })
-
-  //    res.status(200).json(approvedProject)
-  //   }
-
-    
-    res.status(200).json("mis a jour")
-  }
-)

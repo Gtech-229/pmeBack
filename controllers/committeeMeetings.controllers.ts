@@ -8,6 +8,9 @@ import { combineDateAndTime } from "../utils/combinateDateAndHour"
 import { uploadToCloudinary } from "../utils/UploadToCloudinary"
 import { ActivityType } from "generated/prisma/enums"
 import { sendEmail } from "../utils/sendEmail"
+import { newStepValidatedMessage } from "../utils/templates/emails/projectvalidated.message"
+import { stepNotValidatedMessage } from "../utils/templates/emails/stepNotValidated.message"
+import { formatDate } from "../utils/functions"
 
 
 /**
@@ -220,20 +223,6 @@ export const getMeetingDetails = asyncHandler(
       throw new Error("Meeting not found");
     }
 
-    //  Vérifier que l'utilisateur est membre du comité
-    // const isMember = await prisma.committeeMember.findUnique({
-    //   where: {
-    //     committeeId_userId: {
-    //       committeeId: meeting.committeeId,
-    //       userId: req.user.id,
-    //     },
-    //   },
-    // });
-
-    // if (!isMember) {
-    //   res.status(403);
-    //   throw new Error("Access denied: not a committee member");
-    // }
 
     // 3 Mapper vers DTO
     const meetingDTO = {
@@ -411,7 +400,7 @@ export const addMeetingReport = asyncHandler(
 
    
 
-    // Valider les membres presents
+    
     // vérifier que les membres appartiennent bien au comité
 const validMembers = await prisma.committeeMember.findMany({
   where: {
@@ -509,7 +498,7 @@ const report =await prisma.$transaction(async (tx) => {
 
 /**
  * @description Sign a meeting's report
- * @route 
+ * @route POST /committee/meetings/:meetingId/sign
  * @access Present members
  * **/ 
 
@@ -575,7 +564,7 @@ const presence = report.meeting.presences.find(
 
 if (!presence) {
   res.status(403)
-  throw new Error('seuls les membres présents sont autorisés à signer le rapport')
+  throw new Error('Seuls les membres présents sont autorisés à signer le rapport')
 }
 
 const memberId = presence.memberId
@@ -609,7 +598,7 @@ const presentMemberIds = report.meeting.presences.map(
   (p) => p.memberId
 )
 
-const signaturesCountAfter = report.signatures.length + 1
+const signaturesCountAfter = report.signatures.length 
 const allSigned = signaturesCountAfter === presentMemberIds.length
 
 if (!allSigned) {
@@ -617,6 +606,8 @@ if (!allSigned) {
     message: 'Report signed successfully',
     isApplied: false,
   })
+
+  return
 }
 
 /**
@@ -625,7 +616,7 @@ if (!allSigned) {
  * - appliquer toutes les décisions
  */
 await prisma.$transaction(async (tx) => {
-  // 1️⃣ Mettre à jour le statut du rapport
+  //  Mettre à jour le statut du rapport
   const updated = await tx.meetingReport.updateMany({
     where: { id: report.id, status: 'DRAFT' },
     data: { status: 'APPLIED' },
@@ -634,7 +625,7 @@ await prisma.$transaction(async (tx) => {
   // Si déjà appliqué ailleurs → stop
   if (updated.count === 0) return
 
-  // 2️⃣ Récupérer les décisions de projets
+  //  Récupérer les décisions de projets
   const decisions = await tx.meetingProjectDecision.findMany({
     where: { reportId: report.id },
   })
@@ -661,7 +652,7 @@ await prisma.$transaction(async (tx) => {
     const isApproved = decision.decision === 'approved'
     const committeeComment = decision.note ?? null
 
-    // 3️⃣ Mettre à jour l’étape actuelle
+    //  Mettre à jour l’étape actuelle
     await tx.projectStepProgress.update({
       where: { id: currentStep.id },
       data: {
@@ -671,12 +662,12 @@ await prisma.$transaction(async (tx) => {
       },
     })
 
-    // 4️⃣ Déterminer le nouveau statut global
+    //  Déterminer le nouveau statut global
     let newProjectStatus: ProjectStatus | null = null
     let nextStepOrder: number | null = null
 
     if (isApproved) {
-      // ✅ Step définit un statut global → priorité
+      //  Step définit un statut global → priorité
       if (currentStep.campaignStep.setsProjectStatus) {
         newProjectStatus = currentStep.campaignStep.setsProjectStatus
       } else {
@@ -703,7 +694,7 @@ await prisma.$transaction(async (tx) => {
       newProjectStatus = 'rejected'
     }
 
-    // 5️⃣ Mise à jour du projet + historique
+    //  Mise à jour du projet + historique
     if (newProjectStatus) {
       await tx.project.update({
         where: { id: project.id },
@@ -734,7 +725,7 @@ await prisma.$transaction(async (tx) => {
           ? 'Nouvelle étape validée'
           : 'Décision du comité concernant votre projet',
         message: isApproved
-          ? `Félicitations ! Votre projet <strong>${project.title}</strong> a passé avec succès l'étape "${currentStep.campaignStep.name}".`
+          ? `Félicitations ! Votre projet ${project.title} a passé avec succès l'étape "${currentStep.campaignStep.name}".`
           : `Nous vous informons que l’étape "${currentStep.campaignStep.name}" n’a pas été validée par le comité. Vous pouvez consulter les observations associées pour plus de détails.`,
         userId: project.pme.ownerId,
         projectId: project.id,
@@ -742,21 +733,13 @@ await prisma.$transaction(async (tx) => {
       },
     })
 
-    // 7️⃣ Préparer l'email
+    //  Préparer l'email
     emailQueue.push({
       to: project.pme.email,
-      subject: isApproved ? 'Votre projet avance' : 'Mise à jour sur votre projet',
+      subject: isApproved ? 'Nouvelle étape validée' : 'Étape non validée',
       html: isApproved
-        ? `<p>Bonjour ${project.pme.name},</p>
-           <p>Bonne nouvelle ! Votre projet passe à l'étape suivante : "${currentStep.campaignStep.name}".</p>
-           <p><strong>Projet :</strong> ${project.title}</p>
-           ${committeeComment ? `<p><strong>Note du comité :</strong> ${committeeComment}</p>` : ''}
-           <p>Cordialement,<br>L’équipe</p>`
-        : `<p>Bonjour ${project.pme.name},</p>
-           <p>Une étape de votre projet n’a pas été validée : "${currentStep.campaignStep.name}".</p>
-           <p><strong>Projet :</strong> ${project.title}</p>
-           ${committeeComment ? `<p><strong>Note du comité :</strong> ${committeeComment}</p>` : ''}
-           <p>Cordialement,<br>L’équipe</p>`,
+        ? newStepValidatedMessage(project.title , currentStep.campaignStep.name, formatDate(new Date()) )
+        : stepNotValidatedMessage(project.title , currentStep.campaignStep.name , formatDate(new Date())),
     })
   }
 
@@ -765,8 +748,9 @@ await prisma.$transaction(async (tx) => {
     try {
       await sendEmail(email)
     } catch (err) {
-      console.error(`Failed to send email to ${email.to}`, err)
       
+      console.error(`Failed to send email to ${email.to}`, err)
+      throw new Error("Failed to send email");
     }
   }
 

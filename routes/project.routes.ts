@@ -6,7 +6,7 @@ import {
       getProjects,
       deleteProject,
       updateProject, 
-      changeStatus 
+   
     } from "../controllers/project.controllers";
 const router = express.Router();
 import { requireOwnershipOrRole } from "../middlewares/ownership";
@@ -18,7 +18,7 @@ import { upload } from "../middlewares/multer";
 
 router.use(requireAuth)
 router.get('/me', getMyProjects)
-router.patch('/:id/status',requireRole('SUPER_ADMIN','ADMIN'),changeStatus)
+
 
 router.route('/:id')
 .get(getProject)

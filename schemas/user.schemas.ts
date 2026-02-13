@@ -3,9 +3,26 @@ import { z } from "zod"
 export const roleEnum = z.enum([
   "SUPER_ADMIN",
   "ADMIN",
-  "PME",
-  "FINANCIER"
+  "PME"
+
 ])
+
+
+export const PasswordSchema = z
+  .string()
+  .min(8, "Le mot de passe doit contenir au moins 8 caractères")
+  .refine((pw) => /[a-z]/.test(pw), {
+    message: "Au moins une lettre minuscule requise",
+  })
+  .refine((pw) => /[A-Z]/.test(pw), {
+    message: "Au moins une lettre majuscule requise",
+  })
+  .refine((pw) => /\d/.test(pw), {
+    message: "Au moins un chiffre requis",
+  })
+  .refine((pw) => /[^A-Za-z0-9]/.test(pw), {
+    message: "Au moins un caractère spécial requis",
+  })
 
 /**
  * CREATE user
@@ -15,9 +32,7 @@ export const createUserSchema = z.object({
     .string()
     .email("Invalid email format"),
 
-  password: z
-    .string()
-    .min(8, "Password must be at least 8 characters"),
+  password: PasswordSchema,
 
   firstName: z
     .string()
