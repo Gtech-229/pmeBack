@@ -9,7 +9,8 @@ const ownership_1 = require("../middlewares/ownership");
 const ratelimit_1 = require("../middlewares/ratelimit");
 const router = (0, express_1.Router)();
 // Every route require the authentification
-// router.use(requireAuth)
+router.route('/admin')
+    .post(requireAuth_1.requireAuth, (0, rbac_1.requireRole)('SUPER_ADMIN'), user_controllers_1.createAdmin);
 router
     .route("/:id")
     .get((0, ownership_1.requireOwnershipOrRole)(enums_1.Role.ADMIN, enums_1.Role.SUPER_ADMIN), user_controllers_1.getUserById)

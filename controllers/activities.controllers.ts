@@ -19,7 +19,9 @@ export const getActivities = asyncHandler(async(req : AuthRequest, res: Response
   const activities = await prisma.activity.findMany({
     where : {
       userId 
+      
     },
+    orderBy : {createdAt : 'desc'},
    select :{
     id : true,
     title : true,

@@ -84,3 +84,24 @@ export const loginSchema = z.object({
     .string()
     .min(6, "Le mot de passe devrait contenir au moins 6 characteres")
 })
+
+
+export const createAdminUserSchema = z.object({
+  email: z
+    .string()
+    .email("Invalid email format"),
+
+  password: PasswordSchema,
+
+  firstName: z
+    .string()
+    .min(2),
+    
+
+  lastName: z
+    .string()
+    .min(2),
+  
+
+  role: roleEnum
+})

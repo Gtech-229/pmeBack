@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.changeStatus = exports.updateProject = exports.getMyProjects = exports.deleteProject = exports.getProject = exports.getProjects = exports.createProject = void 0;
+exports.updateProject = exports.getMyProjects = exports.deleteProject = exports.getProject = exports.getProjects = exports.createProject = void 0;
 const express_async_handler_1 = __importDefault(require("express-async-handler"));
 const prisma_1 = require("../lib/prisma");
 const UploadToCloudinary_1 = require("../utils/UploadToCloudinary");
@@ -31,28 +31,43 @@ exports.createProject = (0, express_async_handler_1.default)(async (req, res) =>
     }
     const pmeId = user.pme.id;
     /* ---------------- BODY PARSING ---------------- */
-    let credits;
+    let requestcredits;
     try {
-        credits = req.body.credits ? JSON.parse(req.body.credits) : undefined;
+        requestcredits = req.body.credits ? JSON.parse(req.body.credits) : undefined;
     }
     catch {
         res.status(400);
         throw new Error("Format JSON invalide pour les crédits");
     }
-    const bodyToValidate = { ...req.body, credits };
+    const bodyToValidate = { ...req.body, credits: requestcredits };
     const parsedBody = project_schema_1.createProjectBodySchema.safeParse(bodyToValidate);
     if (!parsedBody.success) {
         res.status(400);
         throw parsedBody.error;
     }
-    const { title, description, requestedAmount, hasCredit, campaignId, credits: parsedCredits } = parsedBody.data;
-    // Check if the usser has already a project in the selected campaign
-    const hasAlreadyCampaignProject = await prisma_1.prisma.project.findFirst({
-        where: { campaignId, pmeId }
+    const { title, description, requestedAmount, hasCredit, campaignId, credits, type } = parsedBody.data;
+    /* ---------------- CAMPAIGN CHECK ---------------- */
+    const campaign = await prisma_1.prisma.campaign.findUnique({
+        where: { id: campaignId },
+        select: { type: true, status: true }
     });
-    if (hasAlreadyCampaignProject) {
+    if (!campaign) {
+        res.status(404);
+        throw new Error("Campagne introuvable");
+    }
+    if (campaign.status !== "OPEN") {
         res.status(400);
-        throw new Error("Votre organisation dispose déjà d'un projet pour le compte de cette campagne");
+        throw new Error("Cette campagne n'est pas ouverte aux soumissions");
+    }
+    // Only block multiple submissions for MONO_PROJECT campaigns
+    if (campaign.type === "MONO_PROJECT") {
+        const hasAlreadyCampaignProject = await prisma_1.prisma.project.findFirst({
+            where: { campaignId, pmeId }
+        });
+        if (hasAlreadyCampaignProject) {
+            res.status(400);
+            throw new Error("Votre organisation dispose déjà d'un projet pour le compte de cette campagne");
+        }
     }
     /* ---------------- FILES VALIDATION ---------------- */
     const files = req.files;
@@ -80,7 +95,13 @@ exports.createProject = (0, express_async_handler_1.default)(async (req, res) =>
                 pmeId,
                 campaignId,
                 status: "pending",
-                currentStepOrder: 1
+                currentStepOrder: 1,
+                type
+            },
+            include: {
+                campaign: true,
+                activity: true,
+                stepProgress: true,
             }
         });
         await tx.projectStatusHistory.create({
@@ -110,6 +131,19 @@ exports.createProject = (0, express_async_handler_1.default)(async (req, res) =>
             firstStepId
         };
     });
+    if (credits && Array.isArray(credits) && credits.length > 0) {
+        await prisma_1.prisma.projectCredit.createMany({
+            data: credits.map((c) => ({
+                borrower: c.borrower,
+                amount: Number(c.amount),
+                interestRate: Number(c.interestRate),
+                monthlyPayment: Number(c.monthlyPayment),
+                dueDate: new Date(c.dueDate),
+                remainingBalance: Number(c.remainingBalance),
+                projectId: project.project.id
+            }))
+        });
+    }
     /* ---------------- DOCUMENTS UPLOAD ---------------- */
     for (let i = 0; i < files.length; i++) {
         const file = files[i];
@@ -141,9 +175,7 @@ exports.createProject = (0, express_async_handler_1.default)(async (req, res) =>
         }
     });
     /* ---------------- RESPONSE ---------------- */
-    res.status(201).json({
-        success: true
-    });
+    res.status(201).json(project);
 });
 /**
  * @description Get projects (paginated + filtered)
@@ -151,10 +183,9 @@ exports.createProject = (0, express_async_handler_1.default)(async (req, res) =>
  * @access Private
  */
 exports.getProjects = (0, express_async_handler_1.default)(async (req, res) => {
-    const page = Math.max(Number(req.query.page) || 1, 1);
-    const limit = Math.min(Number(req.query.limit) || 10, 50);
-    const skip = (page - 1) * limit;
-    const { status, date, search, campaign, step, } = req.query;
+    const { status, date, search, campaignId, step, limit, page } = req.query;
+    const take = parseInt(limit) || 20;
+    const skip = (parseInt(page) - 1 || 0) * take;
     //  Build Prisma where clause dynamically
     const where = {};
     if (status && status !== 'all') {
@@ -196,19 +227,19 @@ exports.getProjects = (0, express_async_handler_1.default)(async (req, res) => {
             },
         };
     }
-    if (campaign && campaign !== 'all') {
-        where.campaignId = campaign;
+    if (campaignId && campaignId !== 'all') {
+        where.campaignId = campaignId;
     }
-    // ⚡ Fetch data + count in one transaction
+    //  Fetch data + count in one transaction
     const [projects, total] = await prisma_1.prisma.$transaction([
         prisma_1.prisma.project.findMany({
             where,
             skip,
-            take: limit,
+            take,
             orderBy: { createdAt: 'desc' },
             include: {
                 pme: {
-                    include: { owner: true },
+                    include: { owner: true, promoter: { include: { user: true } } },
                 },
                 stepProgress: {
                     include: {
@@ -222,9 +253,12 @@ exports.getProjects = (0, express_async_handler_1.default)(async (req, res) => {
     ]);
     res.status(200).json({
         data: projects,
-        total,
-        page,
-        pageCount: Math.ceil(total / limit),
+        meta: {
+            page,
+            total,
+            totalPages: Math.ceil(total / take),
+            limit: take
+        }
     });
 });
 /**
@@ -234,7 +268,6 @@ exports.getProjects = (0, express_async_handler_1.default)(async (req, res) => {
  * **/
 exports.getProject = (0, express_async_handler_1.default)(async (req, res) => {
     const id = req.params.id;
-    console.log(id);
     if (!id) {
         res.status(400);
         throw new Error("No id specified on the request");
@@ -249,7 +282,8 @@ exports.getProject = (0, express_async_handler_1.default)(async (req, res) => {
                         include: {
                             campaign: true
                         }
-                    }
+                    },
+                    promoter: { include: { user: true } }
                 }
             },
             campaign: true,
@@ -336,13 +370,14 @@ exports.updateProject = (0, express_async_handler_1.default)(async (req, res) =>
         res.status(400);
         throw new Error("Please , specify a project id");
     }
+    console.log("Received data :", req.body);
     //     // Zod validation
     const parsedData = project_schema_2.updateProjectSchema.safeParse(req.body);
     if (!parsedData.success) {
         res.status(400);
-        throw new Error("Invalid Form data");
+        throw parsedData.error;
     }
-    const { title, description, requestedAmount, existingDocuments, removedDocuments, campaignId, newCredits, existingCredits, removedCredits, hasCredit } = parsedData.data;
+    const { title, description, requestedAmount, existingDocuments, removedDocuments, campaignId, newCredits, existingCredits, removedCredits, hasCredit, type } = parsedData.data;
     const project = await prisma_1.prisma.project.findUnique({
         where: { id: projectId },
         include: {
@@ -362,14 +397,21 @@ exports.updateProject = (0, express_async_handler_1.default)(async (req, res) =>
         res.status(403);
         throw new Error('Not allowed to update this project');
     }
-    await prisma_1.prisma.project.update({
+    const updated = await prisma_1.prisma.project.update({
         where: { id: projectId },
         data: {
             title,
             description,
             requestedAmount,
             campaignId,
-            hasCredit
+            hasCredit,
+            type
+        },
+        include: {
+            campaign: { include: { steps: true } },
+            credits: true,
+            statusHistory: true,
+            stepProgress: { include: { stepDocuments: true } }
         }
     });
     if (existingDocuments?.length) {
@@ -457,74 +499,6 @@ exports.updateProject = (0, express_async_handler_1.default)(async (req, res) =>
             }))
         });
     }
-    res.status(200).json({
-        message: 'Project updated successfully'
-    });
-});
-/**
- * @description Update project status
- * @route PATCH /projects/:id/status
- * @access Private
- */
-exports.changeStatus = (0, express_async_handler_1.default)(async (req, res) => {
-    //   const { id } = req.params
-    //   const { status } = req.body
-    //   if (!id) throw new Error("Project id required")
-    //   if (status !== "approved") {
-    //     // status (rejected, funded, .....)
-    //     const project = await prisma.project.update({
-    //       where: { id },
-    //       data: { status },
-    //     })
-    //     res.status(200).json(project)
-    //   }
-    //   // when status === approved
-    //   const project = await prisma.project.findUnique({
-    //     where: { id },
-    //   })
-    //   if (!project) throw new Error("Project not found")
-    // //  Avoid double validatons
-    //   // const alreadyValidated = project.validatedBy.some(
-    //   //   (u) => u.id === req.user!.id
-    //   // )
-    //   // if (alreadyValidated) {
-    //   //   res.status(400)
-    //   //   throw new Error("Already validated by this user")
-    //   // }
-    //   // add validator
-    //   await prisma.project.update({
-    //     where: { id },
-    //     data: {
-    //       validatedBy: {
-    //         connect: { id: req.user!.id },
-    //       },
-    //     },
-    //   })
-    //   //  re-fetch validators
-    //   const updatedProject = await prisma.project.findUnique({
-    //     where: { id },
-    //     include: {
-    //       validatedBy: true,
-    //     },
-    //   })
-    //   // Amount of admin and super admin that approved the project
-    //   const adminsCount = updatedProject!.validatedBy.filter(
-    //     (u) => u.role === "ADMIN"
-    //   ).length
-    //   const hasSuperAdmin = updatedProject!.validatedBy.some(
-    //     (u) => u.role === "SUPER_ADMIN"
-    //   )
-    //     // Mark as approved
-    //   if (adminsCount >= 2 && hasSuperAdmin) {
-    //     const approvedProject = await prisma.project.update({
-    //       where: { id },
-    //       data: {
-    //         status: "approved",
-    //         validatedAt: new Date(),
-    //       },
-    //     })
-    //    res.status(200).json(approvedProject)
-    //   }
-    res.status(200).json("mis a jour");
+    res.status(200).json(updated);
 });
 //# sourceMappingURL=project.controllers.js.map

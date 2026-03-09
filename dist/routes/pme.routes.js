@@ -12,6 +12,8 @@ router.use(requireAuth_1.requireAuth);
 router.put('/:id', multer_1.upload.single('profileImg'), pme_controllers_1.updateProfile)
     .delete('/:id/profil', pme_controllers_1.deleteProfileImg);
 router.get('/me', pme_controllers_1.getPme);
-router.post('/', pme_controllers_1.validateAccount);
+router.route('/')
+    .post(pme_controllers_1.validateAccount)
+    .get(pme_controllers_1.getPmes);
 exports.default = router;
 //# sourceMappingURL=pme.routes.js.map

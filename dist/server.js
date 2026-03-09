@@ -17,6 +17,11 @@ const activities_routes_1 = __importDefault(require("./routes/activities.routes"
 const committee_route_1 = __importDefault(require("./routes/committee.route"));
 const dashboard_route_1 = __importDefault(require("./routes/dashboard.route"));
 const campaign_route_1 = __importDefault(require("./routes/campaign.route"));
+const admin_routes_1 = __importDefault(require("./routes/admin.routes"));
+const sector_routes_1 = __importDefault(require("./routes/sector.routes"));
+const generalParams_routes_1 = __importDefault(require("./routes/generalParams.routes"));
+const committeeMembers_routes_1 = __importDefault(require("./routes/committeeMembers.routes"));
+const committeeMeetings_routes_1 = __importDefault(require("./routes/committeeMeetings.routes"));
 const ratelimit_1 = require("./middlewares/ratelimit");
 // Initialisations
 dotenv_1.default.config();
@@ -49,8 +54,13 @@ app.use("/api/projects", project_routes_1.default);
 app.use('/api/onboarding/pme', pme_routes_1.default);
 app.use("/api/activities", activities_routes_1.default);
 app.use("/api/committee", committee_route_1.default);
+app.use('/api/committee/:committeeId/meetings', committeeMeetings_routes_1.default);
+app.use('/api/committee/:committeeId/members', committeeMembers_routes_1.default);
 app.use("/api/dashboard", dashboard_route_1.default);
 app.use("/api/campaign", campaign_route_1.default);
+app.use("/api/admin", admin_routes_1.default);
+app.use("/api/sectors", sector_routes_1.default);
+app.use("/api/params", generalParams_routes_1.default);
 app.use(errorHandler_1.errorHandler);
 app.listen(port, () => console.log(`Server running on port ${port}`));
 //# sourceMappingURL=server.js.map

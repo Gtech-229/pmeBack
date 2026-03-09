@@ -66,19 +66,38 @@ export const createProject = asyncHandler(
       requestedAmount,
       hasCredit,
       campaignId,
-      credits 
+      credits ,
+      type
     } = parsedBody.data
 
     
-    // Check if the usser has already a project in the selected campaign
-    const hasAlreadyCampaignProject = await prisma.project.findFirst({
-      where : {campaignId , pmeId}
-    })
+    /* ---------------- CAMPAIGN CHECK ---------------- */
+const campaign = await prisma.campaign.findUnique({
+  where: { id: campaignId },
+  select: { type: true, status: true }
+})
 
-    if(hasAlreadyCampaignProject) {
-      res.status(400)
-      throw new Error("Votre organisation dispose déjà d'un projet pour le compte de cette campagne")
-    }
+if (!campaign) {
+  res.status(404)
+  throw new Error("Campagne introuvable")
+}
+
+if (campaign.status !== "OPEN") {
+  res.status(400)
+  throw new Error("Cette campagne n'est pas ouverte aux soumissions")
+}
+
+// Only block multiple submissions for MONO_PROJECT campaigns
+if (campaign.type === "MONO_PROJECT") {
+  const hasAlreadyCampaignProject = await prisma.project.findFirst({
+    where: { campaignId, pmeId }
+  })
+
+  if (hasAlreadyCampaignProject) {
+    res.status(400)
+    throw new Error("Votre organisation dispose déjà d'un projet pour le compte de cette campagne")
+  }
+}
 
    
 
@@ -119,7 +138,15 @@ export const createProject = asyncHandler(
       pmeId,
       campaignId,
       status: "pending",
-      currentStepOrder: 1
+      currentStepOrder: 1,
+      type 
+    },
+
+    include : {
+      campaign : true,
+      activity : true,
+      stepProgress : true,
+
     }
   })
 
@@ -220,9 +247,7 @@ export const createProject = asyncHandler(
 
     /* ---------------- RESPONSE ---------------- */
 
-    res.status(201).json({
-      success: true
-    })
+    res.status(201).json(project)
   }
 )
 
@@ -237,11 +262,14 @@ export const createProject = asyncHandler(
  */
 export const getProjects = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    const page = Math.max(Number(req.query.page) || 1, 1)
-    const limit = Math.min(Number(req.query.limit) || 10, 50)
-    const skip = (page - 1) * limit
+   
+  
 
-    const { status, date, search,campaign, step, } = req.query
+    const { status, date, search,campaignId, step, limit, page} = req.query
+     const take = parseInt(limit as string) || 20
+    const skip = (parseInt(page as string) - 1 || 0) * take
+
+
 
     //  Build Prisma where clause dynamically
     const where: any = {}
@@ -293,8 +321,8 @@ export const getProjects = asyncHandler(
 
 
 
-    if(campaign && campaign !== 'all'){
-      where.campaignId = campaign
+    if(campaignId && campaignId !== 'all'){
+      where.campaignId = campaignId
     }
 
     //  Fetch data + count in one transaction
@@ -302,11 +330,11 @@ export const getProjects = asyncHandler(
       prisma.project.findMany({
         where,
         skip,
-        take: limit,
+        take,
         orderBy: { createdAt: 'desc' },
         include: {
           pme: {
-            include: { owner: true },
+            include: { owner: true , promoter : {include : {user : true}} },
           },
           stepProgress : {
             include : {
@@ -322,9 +350,13 @@ export const getProjects = asyncHandler(
 
     res.status(200).json({
       data: projects,
-      total,
-      page,
-      pageCount: Math.ceil(total / limit),
+      meta : {
+        page,
+        total,
+        totalPages: Math.ceil(total / take),
+        limit : take
+        
+      }
     })
   }
 )
@@ -358,7 +390,8 @@ export const getProject = asyncHandler( async (req: Request, res: Response)=> {
                 include : {
                   campaign : true
                 }
-              }
+              },
+              promoter : {include : {user : true}}
               
               
             }
@@ -487,11 +520,14 @@ export const updateProject = asyncHandler(async(req : AuthRequest, res: Response
       throw new Error("Please , specify a project id")
     }
 
+
+    console.log("Received data :", req.body)
+
 //     // Zod validation
    const parsedData = updateProjectSchema.safeParse(req.body)
    if(!parsedData.success){
     res.status(400)
-    throw new Error("Invalid Form data")
+    throw parsedData.error
    }
 
    const {
@@ -504,7 +540,8 @@ export const updateProject = asyncHandler(async(req : AuthRequest, res: Response
     newCredits,
     existingCredits,
     removedCredits,
-    hasCredit
+    hasCredit,
+    type
   } = parsedData.data
 
   
@@ -533,14 +570,21 @@ export const updateProject = asyncHandler(async(req : AuthRequest, res: Response
     res.status(403)
     throw new Error('Not allowed to update this project')
   }
-  await prisma.project.update({
+ const updated= await prisma.project.update({
     where: { id: projectId },
     data: {
       title,
       description,
       requestedAmount,
       campaignId,
-      hasCredit 
+      hasCredit ,
+      type
+    },
+    include : {
+      campaign : {include : {steps : true}},
+      credits : true,
+      statusHistory : true,
+      stepProgress : {include : {stepDocuments : true}}
     }
   })
 
@@ -665,9 +709,7 @@ if (!currentStep) {
     })
   }
 
-   res.status(200).json({
-    message: 'Project updated successfully'
-  })
+   res.status(200).json(updated)
 
 
 })

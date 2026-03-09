@@ -1,17 +1,13 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.createMeetingReportSchema = exports.updateMeetingSchema = exports.createCommitteeMeetingSchema = exports.createCommitteeMemberSchema = exports.createCommitteeSchema = void 0;
+exports.updateCommitteeMemberSchema = exports.createMeetingReportSchema = exports.updateMeetingSchema = exports.createCommitteeMeetingSchema = exports.createCommitteeMemberSchema = exports.updateCommitteeSchema = exports.createCommitteeSchema = void 0;
 const zod_1 = require("zod");
-const enums_1 = require("../generated/prisma/enums");
 exports.createCommitteeSchema = zod_1.z.object({
     name: zod_1.z.string().min(3, "Le nom du comité est requis"),
-    stepId: zod_1.z.string().uuid(),
+    stepId: zod_1.z.string().uuid().nullable().optional(),
     description: zod_1.z.string(),
-    members: zod_1.z.array(zod_1.z.object({
-        userId: zod_1.z.string().uuid(),
-        memberRole: zod_1.z.nativeEnum(enums_1.CommitteeRole)
-    })).min(1, "Un comité doit avoir au moins un membre")
 });
+exports.updateCommitteeSchema = exports.createCommitteeSchema.partial();
 exports.createCommitteeMemberSchema = zod_1.z.object({
     committeeId: zod_1.z.string().uuid("Invalid committee id"),
     userId: zod_1.z.string().uuid("Invalid user id"),
@@ -23,33 +19,23 @@ exports.createCommitteeMemberSchema = zod_1.z.object({
     ]),
 });
 exports.createCommitteeMeetingSchema = zod_1.z.object({
-    committeeId: zod_1.z.string().uuid(),
     date: zod_1.z.string().datetime(),
-    startTime: zod_1.z.string().regex(/^\d{2}:\d{2}$/),
-    endTime: zod_1.z.string().regex(/^\d{2}:\d{2}$/),
+    startTime: zod_1.z.string().datetime("Invalid start time format (ISO expected)"),
+    endTime: zod_1.z.string().datetime("Invalid end time format (ISO expected)"),
     location: zod_1.z.string().min(3),
 });
 exports.updateMeetingSchema = zod_1.z.object({
-    date: zod_1.z
-        .string()
-        .datetime("Invalid date format (ISO expected)"),
-    startTime: zod_1.z
-        .string()
-        .datetime("Invalid start time format (ISO expected)"),
-    endTime: zod_1.z
-        .string()
-        .datetime("Invalid end Time format (ISO expected)"),
-    location: zod_1.z
-        .string()
-        .min(2, "Location is required"),
-    status: zod_1.z
-        .enum(["PROGRAMMED", "ONGOING", "FINISHED", "POSTPONED", "CANCELED"])
-        .optional(),
+    date: zod_1.z.string().datetime("Invalid date format").optional(),
+    startTime: zod_1.z.string().datetime("Invalid start time format").optional(),
+    endTime: zod_1.z.string().datetime("Invalid end time format").optional(),
+    location: zod_1.z.string().min(2, "Location is required").optional(),
+    status: zod_1.z.enum(["PROGRAMMED", "ONGOING", "FINISHED", "POSTPONED", "CANCELED"]).optional(),
 })
-    .refine((data) => data.startTime < data.endTime, {
-    message: "startTime must be before endTime",
-    path: ["endTime"],
-});
+    .refine((data) => {
+    if (data.startTime && data.endTime)
+        return data.startTime < data.endTime;
+    return true;
+}, { message: "startTime must be before endTime", path: ["endTime"] });
 const projectDecisionSchema = zod_1.z.object({
     projectId: zod_1.z.string().uuid(),
     decision: zod_1.z.enum(['approved', 'rejected', 'suspended']),
@@ -63,5 +49,12 @@ exports.createMeetingReportSchema = zod_1.z.object({
         .array(projectDecisionSchema)
         .min(1, 'Au moins un projet doit être discuté'),
     otherDecisions: zod_1.z.string().optional(),
+});
+exports.updateCommitteeMemberSchema = zod_1.z.object({
+    memberRole: zod_1.z.enum([
+        "president",
+        "vice_president",
+        "secretary",
+    ]),
 });
 //# sourceMappingURL=committee.schema.js.map

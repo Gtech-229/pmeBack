@@ -10,6 +10,37 @@ export const PROJECT_STATUSES = [
   "failed",
 ] as const
 
+const normalize = (val: string) =>
+  val.replace(/\s/g, '').replace(',', '.')
+
+export const campaignCriteriaSchema = z.object({
+  minAge: z.string().optional().refine((val) => {
+    if (!val || val.trim() === '') return true
+    const num = Number(val)
+    return !isNaN(num) && num >= 0
+  }, { message: "Âge invalide" }),
+
+  maxAge: z.string().optional().refine((val) => {
+    if (!val || val.trim() === '') return true
+    const num = Number(val)
+    return !isNaN(num) && num >= 0
+  }, { message: "Âge invalide" }),
+
+  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
+  maritalStatus: z.enum(["SINGLE", "MARRIED", "DIVORCED", "WIDOWED"]).optional(),
+  projectType: z.enum(["INDIVIDUAL", "COLLECTIVE"]).optional(),
+   sectorIds: z.array(z.string().uuid()).optional(),
+   hasDisability: z.boolean().optional(),
+  
+})
+const committeeSchema = z
+  .object({
+    id: z.string().uuid(),
+  })
+  .passthrough() // pour accepter les autres champs sans erreur
+  .nullable()
+  .optional()
+
 export const createCampaignSchema = z.object({
   
     name: z.string().min(3),
@@ -28,7 +59,7 @@ export const createCampaignSchema = z.object({
         if (value === undefined || value.trim() === "") return true;
 
         // doit être un nombre entier positif
-        const num = Number(value);
+        const num = Number(normalize(value));
         return Number.isInteger(num) && num > 0;
       },
       {
@@ -36,14 +67,28 @@ export const createCampaignSchema = z.object({
           "Le nombre de produits doit être un entier positif ou vide",
       }
     ),
+
+    type : z.enum(["MONO_PROJECT", "MULTI_PROJECT"]),
+     criteria: campaignCriteriaSchema.optional(),
   
 }).refine(
-  (data) => data.start_date < data.end_date,
+  (data) => {
+    const start = new Date(data.start_date);
+    const end = new Date(data.end_date);
+    return start < end;
+  },
   {
     message: "End date must be after start date",
-    path: ["endTime"],
+    path: ["end_date"],
   }
-)
+).refine(
+  (data) => {
+    const { minAge, maxAge } = data.criteria ?? {}
+    if (minAge && maxAge) return Number(minAge) < Number(maxAge)
+    return true
+  },
+  { message: "L'âge minimum doit être inférieur à l'âge maximum", path: ["criteria", "maxAge"] }
+);
 
 
 
@@ -61,6 +106,51 @@ export const createCampaignStepsSchema = z.object({
 
   setsProjectStatus: z.enum(PROJECT_STATUSES).optional(),
 
+  committeeId: z.string().uuid().optional()
 
 })
+
+
+export const updateCampaignStepSchema = z
+  .object({
+    name: z.string().min(1).optional(),
+
+    order: z.number().int().positive().optional(),
+
+    setsProjectStatus: z
+      .enum(["approved", "funded", "completed"])
+      .optional()
+      .nullable(),
+
+    committee: z.any().optional(), // adapte si tu as un vrai schema
+  })
+  .refine(
+    (data) =>
+      data.name !== undefined ||
+      data.order !== undefined ||
+      data.setsProjectStatus !== undefined ||
+      data.committee !== undefined,
+    {
+      message: "Au moins un champ doit être fourni pour la mise à jour",
+    }
+  )
+
+
+
+
+
+export const updateCampaignStepsSchema = z.array(
+  z.object({
+    id: z.string().uuid(),
+    name: z.string().min(1),
+    order: z.number().int().positive(),
+    setsProjectStatus: z
+      .enum(["approved", "funded", "completed"])
+      .optional()
+      .nullable(),
+    committeeId: z.string().uuid().optional(),
+  })
+)
+
+
 

@@ -9,28 +9,7 @@
 * 🟢 You can import this file directly.
 */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.Role = exports.StepStatus = exports.PMEType = exports.PMESize = exports.ReportStatus = exports.MeetingStatus = exports.CommitteeDecision = exports.CommitteeRole = exports.ProjectStatus = exports.ActivityType = exports.CampaignStatus = void 0;
-exports.CampaignStatus = {
-    DRAFT: 'DRAFT',
-    OPEN: 'OPEN',
-    CLOSED: 'CLOSED'
-};
-exports.ActivityType = {
-    WELCOME: 'WELCOME',
-    PROJECT_CREATED: 'PROJECT_CREATED',
-    PROJECT_APPROVED: 'PROJECT_APPROVED',
-    PROJECT_REJECTED: 'PROJECT_REJECTED',
-    ACCOUNT_VERIFIED: 'ACCOUNT_VERIFIED'
-};
-exports.ProjectStatus = {
-    pending: 'pending',
-    approved: 'approved',
-    rejected: 'rejected',
-    funded: 'funded',
-    completed: 'completed',
-    failed: 'failed',
-    suspended: 'suspended'
-};
+exports.CampaignType = exports.ProjectStatus = exports.ActivityType = exports.ProjectType = exports.MaritalStatus = exports.Gender = exports.CampaignStatus = exports.Role = exports.StepStatus = exports.PMEType = exports.PMESize = exports.ReportStatus = exports.MeetingStatus = exports.CommitteeDecision = exports.CommitteeRole = void 0;
 exports.CommitteeRole = {
     president: 'president',
     vice_president: 'vice_president',
@@ -73,5 +52,45 @@ exports.Role = {
     ADMIN: 'ADMIN',
     PME: 'PME',
     FINANCIER: 'FINANCIER'
+};
+exports.CampaignStatus = {
+    DRAFT: 'DRAFT',
+    OPEN: 'OPEN',
+    CLOSED: 'CLOSED'
+};
+exports.Gender = {
+    MALE: 'MALE',
+    FEMALE: 'FEMALE',
+    OTHER: 'OTHER'
+};
+exports.MaritalStatus = {
+    SINGLE: 'SINGLE',
+    MARRIED: 'MARRIED',
+    DIVORCED: 'DIVORCED',
+    WIDOWED: 'WIDOWED'
+};
+exports.ProjectType = {
+    INDIVIDUAL: 'INDIVIDUAL',
+    COLLECTIVE: 'COLLECTIVE'
+};
+exports.ActivityType = {
+    WELCOME: 'WELCOME',
+    PROJECT_CREATED: 'PROJECT_CREATED',
+    PROJECT_APPROVED: 'PROJECT_APPROVED',
+    PROJECT_REJECTED: 'PROJECT_REJECTED',
+    ACCOUNT_VERIFIED: 'ACCOUNT_VERIFIED'
+};
+exports.ProjectStatus = {
+    pending: 'pending',
+    approved: 'approved',
+    rejected: 'rejected',
+    funded: 'funded',
+    completed: 'completed',
+    failed: 'failed',
+    suspended: 'suspended'
+};
+exports.CampaignType = {
+    MULTI_PROJECT: 'MULTI_PROJECT',
+    MONO_PROJECT: 'MONO_PROJECT'
 };
 //# sourceMappingURL=enums.js.map

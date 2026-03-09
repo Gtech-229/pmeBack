@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.fullOnboardingSchema = exports.step2Schema = exports.step1Schema = void 0;
+exports.createPMESchema = exports.fullOnboardingSchema = exports.step4Schema = exports.promoterSchema = exports.step2Schema = exports.step1Schema = void 0;
 const zod_1 = require("zod");
 const admin_division_1 = require("../utils/admin-division");
 exports.step1Schema = zod_1.z.object({
@@ -24,10 +24,7 @@ exports.step1Schema = zod_1.z.object({
         .string()
         .min(4, {
         error: (iss) => iss.input === undefined ? "Saisissew votre secteur d'activite" : "Entree invalide"
-    }),
-    userRole: zod_1.z
-        .string()
-        .optional(),
+    })
 });
 exports.step2Schema = zod_1.z.object({
     email: zod_1.z.string({
@@ -80,6 +77,33 @@ exports.step2Schema = zod_1.z.object({
         }
     }
 });
+exports.promoterSchema = zod_1.z.object({
+    gender: zod_1.z.enum(["MALE", "FEMALE", "OTHER"], {
+        error: (iss) => iss.input === undefined ? "Sélectionnez un genre" : "Invalid input"
+    }),
+    birthDate: zod_1.z.string({
+        error: (iss) => iss.input === undefined ? "Date de naissance requise" : "Invalid input"
+    }),
+    maritalStatus: zod_1.z.enum(["SINGLE", "MARRIED", "DIVORCED", "WIDOWED"], {
+        error: (iss) => iss.input === undefined ? "Sélectionnez une situation" : "Invalid input"
+    }),
+    hasDisability: zod_1.z.boolean(),
+    disabilityType: zod_1.z.string().optional(),
+    role: zod_1.z.string().optional()
+}).superRefine((data, ctx) => {
+    if (data.hasDisability && (!data.disabilityType || !data.disabilityType.trim())) {
+        ctx.addIssue({
+            code: zod_1.z.ZodIssueCode.custom,
+            path: ["disabilityType"],
+            message: "Veuillez préciser le type de handicap",
+        });
+    }
+});
+exports.step4Schema = zod_1.z.object({
+    promoter: exports.promoterSchema
+});
 exports.fullOnboardingSchema = exports.step1Schema
+    .merge(exports.step4Schema)
     .merge(exports.step2Schema);
+exports.createPMESchema = exports.fullOnboardingSchema.strict();
 //# sourceMappingURL=pme.onBoarding.js.map

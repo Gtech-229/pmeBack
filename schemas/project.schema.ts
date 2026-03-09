@@ -1,3 +1,4 @@
+import { ProjectType } from "../generated/prisma/enums";
 import { z } from "zod";
 
 // ==========================
@@ -41,7 +42,9 @@ export const creditSchema = z.object({
 
 
 
-  dueDate: z.string().datetime(),
+  dueDate:z.string({
+    error: (iss) => iss.input === undefined ? "Date decheance non renseigné" : "Invalid input"
+  }),
 
     monthlyPayment: z.coerce
     .number()
@@ -62,6 +65,9 @@ export const creditSchema = z.object({
 export type CreditInput = z.infer<typeof creditSchema>
 
 export const createProjectBodySchema = z.object({
+  type : z.nativeEnum(ProjectType , {
+      error : (iss) => iss.input === undefined ? "Type requis" : "Type incorrect"
+    }),
   title: z.string().min(3),
   description: z.string().min(20),
 
@@ -90,7 +96,9 @@ export const createProjectBodySchema = z.object({
 
 export const updateProjectSchema = z.object({
   title: z.string().min(3).max(255),
-
+    type : z.nativeEnum(ProjectType , {
+      error : (iss) => iss.input === undefined ? "Type requis" : "Type incorrect"
+    }),
   
  hasCredit: z
   .union([z.boolean(), z.string()])

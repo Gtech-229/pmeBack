@@ -4,16 +4,21 @@ import {
   deleteUser,
   getUserById,
   getUsers,
-  updateUser
+  updateUser, 
+  createAdmin
 } from "../controllers/user.controllers"
 import { Role } from "../generated/prisma/enums"
 import { requireAuth } from "../middlewares/requireAuth"
 import { requireRole } from "../middlewares/rbac"
 import { requireOwnershipOrRole } from "../middlewares/ownership"
 import { createRateLimiter } from "../middlewares/ratelimit"
+
 const router = Router()
 // Every route require the authentification
-// router.use(requireAuth)
+
+
+router.route('/admin')
+.post(requireAuth, requireRole('SUPER_ADMIN'), createAdmin)
 
 router
   .route("/:id")

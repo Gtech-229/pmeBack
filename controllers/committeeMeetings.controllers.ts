@@ -27,8 +27,14 @@ export const createMeeting = asyncHandler(
       throw new Error("Unauthorized")
     }
 
+    const {committeeId} = req.params
+    if(!committeeId) {
+      res.status(404);
+      throw new Error("Aucun comite associé")
+    }
+
     const data = createCommitteeMeetingSchema.parse(req.body)
-    const { committeeId, date, startTime, endTime, location } = data
+    const {date, startTime, endTime, location } = data
 
     if (startTime >= endTime) {
       res.status(400)
@@ -61,16 +67,13 @@ export const createMeeting = asyncHandler(
       data: {
         committeeId,
         date: new Date(date),
-        startTime : combineDateAndTime(new Date(date),startTime),
-        endTime :  combineDateAndTime(new Date(date),endTime),
+        startTime ,
+        endTime ,
         location,
       },
     })
 
-    res.status(201).json({
-      success: true,
-      data: meeting,
-    })
+    res.status(201).json(meeting)
   }
 )
 
@@ -102,13 +105,13 @@ export const getMeetings = asyncHandler(
       res.status(404)
       throw new Error("Committee not found")
     }
-
+ 
  
 
     // Récupération des réunions
     const meetings = await prisma.committeeMeeting.findMany({
       where: { committeeId },
-      orderBy: { date: "desc" },
+      orderBy: { createdAt: "desc" },
       select: {
         id: true,
         date: true,
@@ -117,7 +120,9 @@ export const getMeetings = asyncHandler(
         location: true,
         createdAt: true,
         status: true,
-        updatedAt : true
+        updatedAt : true,
+        presences : true, 
+        report : true
       },
     })
 
@@ -131,7 +136,9 @@ export const getMeetings = asyncHandler(
       createdAt: m.createdAt.toISOString(),
       status: m.status,
       committeeId ,
-      updatedAt : m.updatedAt.toISOString()
+      updatedAt : m.updatedAt.toISOString(),
+      presences : m.presences,
+      report : m.report
     }))
 
     res.status(200).json(data)
@@ -246,9 +253,13 @@ export const getMeetingDetails = asyncHandler(
 );
 
 
+
+
+
+
 /**
  * @description Update a committee meeting
- * @route PATCH /committee/meetings/:meetingId
+ * @route PATCH/committee/meetings/:meetingId
  * @access Private
  */
 export const updateMeeting = asyncHandler(
@@ -262,6 +273,8 @@ export const updateMeeting = asyncHandler(
       res.status(401)
       throw new Error("Unauthorized")
     }
+
+    
     
 
     // Validation Zod
@@ -289,35 +302,62 @@ export const updateMeeting = asyncHandler(
       throw new Error("Meeting not found")
     }
 
-    //  Vérifier que l'utilisateur est membre du comité
-    const isMember = meeting.committee.members.some(
-      (m) => m.userId === req.user!.id
+   const isMember = meeting.committee.members.some(m => m.userId === req.user!.id)
+if (!isMember) {
+  res.status(403)
+  throw new Error("You are not allowed to update this meeting")
+}
+
+if (meeting.status === "FINISHED") {
+  res.status(400)
+  throw new Error("Cannot update a finished meeting")
+}
+
+// Status transitions that require secretary role
+const statusRequiresSecretary = ["ONGOING", "CANCELED", "POSTPONED"]
+
+if (data.status && statusRequiresSecretary.includes(data.status)) {
+  const member = meeting.committee.members.find(m => m.userId === req.user!.id)
+
+  if (member?.memberRole !== "secretary") {
+    res.status(403)
+    throw new Error("Seul le secrétaire peut modifier le statut de la réunion")
+  }
+}
+
+// Block invalid status transitions
+if (data.status) {
+  const validTransitions: Record<string, string[]> = {
+    PROGRAMMED: ["ONGOING", "POSTPONED", "CANCELED"],
+    ONGOING:    ["FINISHED", "POSTPONED", "CANCELED"],
+    POSTPONED:  ["PROGRAMMED", "CANCELED"],
+    CANCELED:   [], // terminal
+    FINISHED:   [], // terminal — already blocked above
+  }
+
+  const allowed = validTransitions[meeting.status] ?? []
+  if (!allowed.includes(data.status)) {
+    res.status(400)
+    throw new Error(
+      `Transition invalide : ${meeting.status} → ${data.status}`
     )
+  }
+}
 
-    if (!isMember) {
-      res.status(403)
-      throw new Error("You are not allowed to update this meeting")
-    }
+const updatedMeeting = await prisma.committeeMeeting.update({
+  where: { id: meetingId },
+  data: {
+    ...(data.date ? { date: new Date(data.date) } : {}),
+    ...(data.startTime ? { startTime: data.startTime } : {}),
+    ...(data.endTime ? { endTime: data.endTime } : {}),
+    ...(data.location ? { location: data.location } : {}),
+    ...(data.status ? { status: data.status } : {}),
+  }
+})
 
-    //  Interdire modification si réunion terminée
-    if (meeting.status === "FINISHED") {
-      res.status(400)
-      throw new Error("Cannot update a finished meeting")
-    }
+res.status(200).json(updatedMeeting)
 
-    //  Update
-    const updatedMeeting = await prisma.committeeMeeting.update({
-      where: { id: meetingId },
-      data: {
-        date: new Date(data.date),
-        startTime: data.startTime,
-        endTime: data.endTime,
-        location: data.location,
-        status: data.status ? data.status : meeting.status 
-      },
-    })
-
-    res.status(200).json(updatedMeeting)
+  
   }
 )
 
@@ -591,15 +631,19 @@ await prisma.reportSignature.create({
   },
 })
 
+const updatedSignatures = await prisma.reportSignature.findMany({
+  where: { reportId: report.id }
+})
+
 /**
  * Vérifier si tous les présents ont signé
  */
-const presentMemberIds = report.meeting.presences.map(
-  (p) => p.memberId
-)
+const presentMemberIds = report.meeting.presences.map(p => p.memberId)
 
-const signaturesCountAfter = report.signatures.length 
-const allSigned = signaturesCountAfter === presentMemberIds.length
+// Check every present member has signed — not just count
+const allSigned = presentMemberIds.every(memberId =>
+  updatedSignatures.some(s => s.memberId === memberId)
+)
 
 if (!allSigned) {
  res.status(200).json({
@@ -615,148 +659,193 @@ if (!allSigned) {
  * - appliquer le rapport
  * - appliquer toutes les décisions
  */
-await prisma.$transaction(async (tx) => {
-  //  Mettre à jour le statut du rapport
-  const updated = await tx.meetingReport.updateMany({
-    where: { id: report.id, status: 'DRAFT' },
-    data: { status: 'APPLIED' },
-  })
+// ── 1. Fetch everything needed BEFORE the transaction ──
+const decisions = await prisma.meetingProjectDecision.findMany({
+  where: { reportId: report.id },
+})
 
-  // Si déjà appliqué ailleurs → stop
-  if (updated.count === 0) return
-
-  //  Récupérer les décisions de projets
-  const decisions = await tx.meetingProjectDecision.findMany({
-    where: { reportId: report.id },
-  })
-
-  // Queue d'emails à envoyer après transaction
-  const emailQueue: { to: string; subject: string; html: string }[] = []
-
-  for (const decision of decisions) {
-    const project = await tx.project.findUnique({
-      where: { id: decision.projectId },
+const projects = await Promise.all(
+  decisions.map(d =>
+    prisma.project.findUnique({
+      where: { id: d.projectId },
       include: {
-        stepProgress: { include: { campaignStep: true }, orderBy: { campaignStep: { order: 'asc' } } },
+        stepProgress: {
+          include: { campaignStep: true },
+          orderBy: { campaignStep: { order: 'asc' } }
+        },
         pme: true,
         campaign: true,
       },
     })
+  )
+)
 
-    if (!project) continue
+// ── 2. Prepare all write operations data before transaction ──
+type WriteOp = {
+  currentStepId: string
+  isApproved: boolean
+  committeeComment: string | null
+  newProjectStatus: ProjectStatus | null
+  nextStepId: string | null
+  projectId: string
+  nextStepOrder: number | null
+  currentStepOrder: number
+  project: NonNullable<typeof projects[0]>
+  decision: typeof decisions[0]
+}
 
-    // Étape en cours
-    const currentStep = project.stepProgress.find((s) => s.status === 'IN_PROGRESS')
-    if (!currentStep) continue
+const writeOps: WriteOp[] = []
 
-    const isApproved = decision.decision === 'approved'
-    const committeeComment = decision.note ?? null
+for (const decision of decisions) {
+  const project = projects.find(p => p?.id === decision.projectId)
+  if (!project) continue
 
-    //  Mettre à jour l’étape actuelle
-    await tx.projectStepProgress.update({
-      where: { id: currentStep.id },
-      data: {
-        status: isApproved ? 'APPROVED' : 'REJECTED',
-        validatedAt: new Date(),
-        comment: committeeComment,
-      },
+  const currentStep = project.stepProgress.find(s => s.status === 'IN_PROGRESS')
+  if (!currentStep) continue
+
+  console.log("Etape actuelle :", currentStep)
+
+  const isApproved = decision.decision === 'approved'
+  const committeeComment = decision.note ?? null
+
+  let newProjectStatus: ProjectStatus | null = null
+  let nextStepOrder: number | null = null
+  let nextStepId: string | null = null
+
+ if (isApproved) {
+  // Always try to find next step regardless of setsProjectStatus
+  const nextStep = project.stepProgress.find(
+    s => s.campaignStep.order === currentStep.campaignStep.order + 1
+  )
+
+  if (currentStep.campaignStep.setsProjectStatus) {
+    // Set the global status
+    newProjectStatus = currentStep.campaignStep.setsProjectStatus
+  }
+
+  if (nextStep) {
+  
+    nextStepOrder = nextStep.campaignStep.order
+    nextStepId = nextStep.id
+  } else {
+   
+    if (!newProjectStatus) {
+      newProjectStatus = 'completed'
+    }
+  }
+} else {
+  newProjectStatus = 'rejected'
+}
+
+  writeOps.push({
+    currentStepId: currentStep.id,
+    isApproved,
+    committeeComment,
+    newProjectStatus,
+    nextStepId,
+    nextStepOrder,
+    currentStepOrder: currentStep.campaignStep.order,
+    projectId: project.id,
+    project,
+    decision,
+  })
+}
+
+// ── 3. Transaction — pure DB writes only, no fetches, no emails ──
+await prisma.$transaction(
+  async (tx) => {
+    const updated = await tx.meetingReport.updateMany({
+      where: { id: report.id, status: 'DRAFT' },
+      data: { status: 'APPLIED' },
     })
 
-    //  Déterminer le nouveau statut global
-    let newProjectStatus: ProjectStatus | null = null
-    let nextStepOrder: number | null = null
+    if (updated.count === 0) return
 
-    if (isApproved) {
-      //  Step définit un statut global → priorité
-      if (currentStep.campaignStep.setsProjectStatus) {
-        newProjectStatus = currentStep.campaignStep.setsProjectStatus
-      } else {
-        // Sinon, dernière étape validée → completed
-        const nextStep = project.stepProgress.find(
-          (s) => s.campaignStep.order === currentStep.campaignStep.order + 1
-        )
-        if (!nextStep) newProjectStatus = 'completed'
-        else nextStepOrder = nextStep.campaignStep.order
-      }
-
-      // Activer l’étape suivante si elle existe
-      if (nextStepOrder) {
-        const nextStep = project.stepProgress.find((s) => s.campaignStep.order === nextStepOrder)
-        if (nextStep) {
-          await tx.projectStepProgress.update({
-            where: { id: nextStep.id },
-            data: { status: 'IN_PROGRESS' },
-          })
-        }
-      }
-    } else {
-      // Rejet → statut global forcé
-      newProjectStatus = 'rejected'
-    }
-
-    //  Mise à jour du projet + historique
-    if (newProjectStatus) {
-      await tx.project.update({
-        where: { id: project.id },
+    for (const op of writeOps) {
+      // Update current step
+      await tx.projectStepProgress.update({
+        where: { id: op.currentStepId },
         data: {
-          status: newProjectStatus,
-          currentStepOrder:
-            newProjectStatus === 'completed'
-              ? null
-              : nextStepOrder ?? currentStep.campaignStep.order,
+          status: op.isApproved ? 'APPROVED' : 'REJECTED',
+          validatedAt: new Date(),
+          comment: op.committeeComment,
         },
       })
 
-      // Historique des statuts
-      await tx.projectStatusHistory.create({
+      // Activate next step
+      if (op.nextStepId) {
+        await tx.projectStepProgress.update({
+          where: { id: op.nextStepId },
+          data: { status: 'IN_PROGRESS' },
+        })
+      }
+
+      // Update project status
+      if (op.newProjectStatus) {
+        await tx.project.update({
+          where: { id: op.projectId },
+          data: {
+            status: op.newProjectStatus,
+            currentStepOrder:
+              op.newProjectStatus === 'completed'
+                ? null
+                : op.nextStepOrder ?? op.currentStepOrder,
+          },
+        })
+
+        await tx.projectStatusHistory.create({
+          data: {
+            projectId: op.projectId,
+            status: op.newProjectStatus,
+            changedAt: new Date(),
+          },
+        })
+      }
+
+      // Activity
+      await tx.activity.create({
         data: {
-          projectId: project.id,
-          status: newProjectStatus,
-          changedAt: new Date(),
+          type: op.isApproved ? 'PROJECT_APPROVED' : 'PROJECT_REJECTED',
+          title: op.isApproved
+            ? 'Nouvelle étape validée'
+            : 'Décision du comité concernant votre projet',
+          message: op.isApproved
+            ? `Félicitations ! Votre projet ${op.project.title} a passé avec succès l'étape "${op.project.stepProgress.find(s => s.id === op.currentStepId)?.campaignStep.name}".`
+            : `Nous vous informons que l'étape n'a pas été validée par le comité.`,
+          userId: op.project.pme.ownerId,
+          projectId: op.projectId,
+          pmeId: op.project.pmeId ?? undefined,
         },
       })
     }
-
-    //  Créer activité utilisateur
-    await tx.activity.create({
-      data: {
-        type: isApproved ? 'PROJECT_APPROVED' : 'PROJECT_REJECTED',
-        title: isApproved
-          ? 'Nouvelle étape validée'
-          : 'Décision du comité concernant votre projet',
-        message: isApproved
-          ? `Félicitations ! Votre projet ${project.title} a passé avec succès l'étape "${currentStep.campaignStep.name}".`
-          : `Nous vous informons que l’étape "${currentStep.campaignStep.name}" n’a pas été validée par le comité. Vous pouvez consulter les observations associées pour plus de détails.`,
-        userId: project.pme.ownerId,
-        projectId: project.id,
-        pmeId: project.pmeId ?? undefined,
-      },
-    })
-
-    //  Préparer l'email
-    emailQueue.push({
-      to: project.pme.email,
-      subject: isApproved ? 'Nouvelle étape validée' : 'Étape non validée',
-      html: isApproved
-        ? newStepValidatedMessage(project.title , currentStep.campaignStep.name, formatDate(new Date()) )
-        : stepNotValidatedMessage(project.title , currentStep.campaignStep.name , formatDate(new Date())),
-    })
+  },
+  {
+    timeout: 15000 
   }
+)
 
-  // envoyer les emails après la transaction
-   for (const email of emailQueue) {
-    try {
-      await sendEmail(email)
-    } catch (err) {
-      
-      console.error(`Failed to send email to ${email.to}`, err)
-      throw new Error("Failed to send email");
+// ── 4. Send emails AFTER transaction commits ──
+const emailQueue = await Promise.all(
+  writeOps.map(async (op) => {
+    const stepName = op.project.stepProgress
+      .find(s => s.id === op.currentStepId)?.campaignStep.name ?? ''
+
+    return {
+      to: op.project.pme.email,
+      subject: op.isApproved ? 'Nouvelle étape validée' : 'Étape non validée',
+      html: op.isApproved
+        ? await newStepValidatedMessage(op.project.title, stepName, formatDate(new Date()))
+        : await stepNotValidatedMessage(op.project.title, stepName, formatDate(new Date())),
     }
-  }
+  })
+)
 
-
-
-})
+// Fire and forget — don't let email failures block the response
+for (const email of emailQueue) {
+  sendEmail(email).catch(err =>
+    console.error(`Failed to send email to ${email.to}`, err)
+  )
+}
 
 
 

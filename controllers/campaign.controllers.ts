@@ -2,7 +2,9 @@ import asyncHandler from "express-async-handler"
 import { AuthRequest } from "types"
 import { Response } from "express"
 import { prisma } from "../lib/prisma"
-import { createCampaignSchema, createCampaignStepsSchema } from "../schemas/campaign.schema"
+import { createCampaignSchema, createCampaignStepsSchema, updateCampaignStepSchema, updateCampaignStepsSchema } from "../schemas/campaign.schema"
+import { CampaignStatus, Gender, MaritalStatus, ProjectType } from "../generated/prisma/enums"
+import { Prisma } from "../generated/prisma/client"
 
 /**
  * @description Get campaigns
@@ -10,32 +12,80 @@ import { createCampaignSchema, createCampaignStepsSchema } from "../schemas/camp
  * @access Authenticated admin
  */
 
-export const getCampaigns = asyncHandler(
-  async (req: AuthRequest, res: Response) => {
+export const getCampaigns = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user) {
+    res.status(403)
+    throw new Error("Access denied")
+  }
 
-    // Vérification du rôle admin
-    if (!req.user) {
-      res.status(403)
-      throw new Error("Access denied")
-    }
+  const { 
+  status, search, page, limit, 
+  sector, projectType, 
+  minAge, maxAge, 
+  gender, maritalStatus,
+  hasDisability 
+} = req.query
 
-    // Récupérer toutes les campagnes
-    const campaigns = await prisma.campaign.findMany({
-      orderBy: {
-        createdAt: "desc",
-      },
-      include : {
-        steps : {
-          include : {
-            committee : true
+  const take = parseInt(limit as string) || 20
+  const skip = (parseInt(page as string) - 1 || 0) * take
+
+  const where: Prisma.CampaignWhereInput = {
+  ...(status && status !== "all" ? { status: status as CampaignStatus } : {}),
+  ...(search ? { name: { contains: search as string, mode: "insensitive" } } : {}),
+
+  ...((sector || projectType || minAge || maxAge || gender || maritalStatus || hasDisability !== undefined) ? {
+    criteria: {
+      ...(projectType && projectType !== "all" ? { projectType: projectType as ProjectType } : {}),
+      ...(gender && gender !== "all" ? { gender: gender as Gender } : {}),
+      ...(maritalStatus && maritalStatus !== "all" ? { maritalStatus: maritalStatus as MaritalStatus } : {}),
+      ...(hasDisability !== undefined && hasDisability !== "all" ? { 
+        hasDisability: hasDisability === "true" 
+      } : {}),
+      ...(minAge ? { minAge: { lte: parseInt(minAge as string) } } : {}),
+      ...(maxAge ? { maxAge: { gte: parseInt(maxAge as string) } } : {}),
+      ...(sector ? {
+        sectors: {
+          some: {
+            sector: { name: { contains: sector as string, mode: "insensitive" } }
           }
         }
-      }
-    })
+      } : {})
+    }
+  } : {})
+}
+  const [data, total] = await prisma.$transaction([
+    prisma.campaign.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+      include: {
+        steps: {
+          include: { committee: true },
+          
+        },
+        criteria: {
+          include: {
+            sectors: {
+              include: { sector: true }
+            }
+          }
+        }
+      },
+    }),
+    prisma.campaign.count({ where }),
+  ])
 
-    res.status(200).json(campaigns)
-  }
-)
+  res.status(200).json({
+    data,
+    meta: {
+      total,
+      page: parseInt(page as string) || 1,
+      limit: take,
+      totalPages: Math.ceil(total / take),
+    },
+  })
+})
 
 
 
@@ -53,35 +103,71 @@ export const createCampaign = asyncHandler(
       throw new Error("Access denied")
     }
 
-    const parsed = createCampaignSchema.parse(req.body)
-    if(!parsed){
-      res.status(400)
-      throw new Error('Invalid datas')
-    }
+   const parsed = createCampaignSchema.parse(req.body)
+if (!parsed) {
+  res.status(400)
+  throw new Error('Invalid datas')
+}
 
-    const {
+const { name, description, start_date, end_date, status, targetProject, type, criteria } = parsed
+
+const campaign = await prisma.$transaction(async (tx) => {
+  const createdCampaign = await tx.campaign.create({
+    data: {
       name,
       description,
       start_date,
       end_date,
       status,
-      targetProject
-    } = parsed
+      targetProjects: targetProject ? Number(targetProject.replace(/\s/g, '').replace(',', '.')) : null,
+      type,
+      
+    },
+  })
 
-   
+  if (criteria) {
+    const { minAge, maxAge, gender, maritalStatus, projectType, sectorIds } = criteria
 
-    const campaign = await prisma.campaign.create({
+    const createdCriteria = await tx.campaignCriteria.create({
       data: {
-        name,
-        description,
-        start_date,
-        end_date,
-        status,
-        targetProjects  : Number(targetProject) ?? null
+        campaignId: createdCampaign.id,
+        minAge: minAge ? Number(minAge) : null,
+        maxAge: maxAge ? Number(maxAge) : null,
+        gender: gender ?? null,
+        maritalStatus: maritalStatus ?? null,
+        projectType: projectType ?? null,
+        hasDisability: criteria.hasDisability ?? null,
       },
     })
 
-    res.status(201).json(campaign)
+    if (sectorIds && sectorIds.length > 0) {
+      await tx.campaignCriteriaSector.createMany({
+        data: sectorIds.map((sectorId) => ({
+          criteriaId: createdCriteria.id,
+          sectorId,
+        })),
+      })
+    }
+  }
+
+  return tx.campaign.findUnique({
+    where: { id: createdCampaign.id },
+    include: {
+      steps: true,
+      criteria: {
+        include: {
+          sectors: {
+            include: { sector: true }
+          }
+        }
+      }
+    }
+  })
+})
+
+res.status(201).json(campaign)
+   
+    
   }
 )
 
@@ -132,6 +218,15 @@ export const getCampaignById = asyncHandler(
         },
 
         projects : true,
+        criteria : {
+          include : {
+            sectors : {
+              include : {
+                sector : true
+              }
+            }
+          }
+        }
         
       }
      
@@ -161,41 +256,94 @@ export const createCampaignSteps = asyncHandler(
       throw parsed.error
     }
 
-    const { order, name, campaignId, setsProjectStatus } = parsed.data
+    const { order, name, campaignId, setsProjectStatus, committeeId } =
+      parsed.data
 
     if (!req.user) {
       res.status(403)
       throw new Error("Access denied")
     }
 
-    // Vérifier que la campagne existe
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-    })
+    
 
-    if (!campaign) {
-      res.status(404)
-      throw new Error("Campaign not found")
-    }
+    //  transaction 
+    const step = await prisma.$transaction(async (tx) => {
+     
+     //  vérifier campagne
+      const campaign = await tx.campaign.findUnique({
+        where: { id: campaignId },
+      })
 
-    // Vérifier qu’un step avec le même ordre n’existe pas déjà
-    const existingStep = await prisma.campaignStep.findFirst({
-      where: { campaignId, order },
-    })
+      if (!campaign) {
+        res.status(404)
+        throw new Error("Campaign not found")
+      }
 
-    if (existingStep) {
-      res.status(409)
-      throw new Error("Une étape existe déjà avec cet ordre")
-    }
+      //  Verifier impact global
+      if (setsProjectStatus) {
+  const existingStatus = await tx.campaignStep.findFirst({
+    where: {
+      campaignId,
+      setsProjectStatus,
+    },
+    select: { id: true },
+  })
 
-    // ✅ Création du step avec impact métier optionnel
-    const step = await prisma.campaignStep.create({
-      data: {
-        name,
-        order,
-        campaignId,
-        setsProjectStatus: setsProjectStatus ?? null, 
-      },
+  if (existingStatus) {
+    res.status(409)
+    throw new Error(
+      "Une étape avec le meme impact exist deja dans la campagne ."
+    )
+  }
+}
+
+      //  vérifier unicité order
+      const existingStep = await tx.campaignStep.findFirst({
+        where: { campaignId, order },
+      })
+
+      if (existingStep) {
+        res.status(409)
+        throw new Error("Une étape existe déjà avec cet ordre")
+      }
+
+      //  vérifier comité si fourni
+      if (committeeId) {
+        const committee = await tx.committee.findUnique({
+          where: { id: committeeId },
+          select: { id: true, stepId: true },
+        })
+
+        if (!committee) {
+          res.status(404)
+          throw new Error("Comité introuvable")
+        }
+
+        if (committee.stepId) {
+          res.status(409)
+          throw new Error("Ce comité est déjà assigné à une autre étape")
+        }
+      }
+
+      //  créer la step
+      const createdStep = await tx.campaignStep.create({
+        data: {
+          name,
+          order,
+          campaignId,
+          setsProjectStatus: setsProjectStatus ?? null,
+        },
+      })
+
+      //  attacher le comité si présent
+      if (committeeId) {
+        await tx.committee.update({
+          where: { id: committeeId },
+          data: { stepId: createdStep.id },
+        })
+      }
+
+      return createdStep
     })
 
     res.status(201).json(step)
@@ -212,14 +360,14 @@ export const createCampaignSteps = asyncHandler(
 export const deleteCampaignStep = asyncHandler(
   async (req: AuthRequest, res: Response) => {
 
-    const { campaignId, id } = req.params
+    const { campaignId, stepId } = req.params
 
     if (!req.user) {
       res.status(403)
       throw new Error("Access denied")
     }
 
-    if (!campaignId || !id) {
+    if (!campaignId || !stepId) {
       res.status(400)
       throw new Error("Missing campaign id or step id")
     }
@@ -237,7 +385,7 @@ export const deleteCampaignStep = asyncHandler(
     // Vérifier que l’étape existe et appartient à la campagne
     const step = await prisma.campaignStep.findFirst({
       where: {
-        id,
+        id : stepId,
         campaignId
       }
     })
@@ -250,7 +398,7 @@ export const deleteCampaignStep = asyncHandler(
    
     const linkedCommittee = await prisma.committee.findUnique({
       where: {
-        stepId: id
+        stepId: stepId
       }
     })
 
@@ -263,12 +411,126 @@ export const deleteCampaignStep = asyncHandler(
 
     // Suppression de l’étape
     await prisma.campaignStep.delete({
-      where: { id }
+      where: { id : stepId }
     })
 
     res.status(200).json("Deleted successfully")
   }
 )
+
+/**
+ * @description Update a campaign validation step
+ * @route PUT /campaign/:campaignId/steps
+ * @access Authenticated Admin
+ */
+
+export const updateCampaignStep = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const { campaignId } = req.params
+
+    if (!campaignId) {
+      res.status(400)
+      throw new Error("L'id de la campagne est manquant")
+    }
+
+    const parsed = updateCampaignStepsSchema.safeParse(req.body)
+
+    if (!parsed.success) {
+      res.status(400)
+      throw new Error("Payload invalide")
+    }
+
+    const steps = parsed.data
+
+  await prisma.$transaction(async (tx) => {
+  //  PHASE 1 — neutraliser les orders
+  for (const step of steps) {
+    await tx.campaignStep.update({
+      where: { id: step.id },
+      data: {
+        order: step.order + 1000, // ← offset temporaire
+      },
+    })
+  }
+
+  //  PHASE 2 — appliquer les vraies valeurs
+  for (const step of steps) {
+    await tx.campaignStep.update({
+      where: { id: step.id },
+      data: {
+        name: step.name,
+        order: step.order,
+        setsProjectStatus: step.setsProjectStatus ?? null,
+      },
+    })
+  }
+
+  //  PHASE 3 — gérer les comités
+  for (const step of steps) {
+    // détacher anciens
+    await tx.committee.updateMany({
+      where: { stepId: step.id },
+      data: { stepId: null },
+    })
+
+    // attacher nouveau
+    if (step.committeeId) {
+      await tx.committee.update({
+        where: { id: step.committeeId },
+        data: { stepId: step.id },
+      })
+    }
+  }
+})
+
+    res.status(200).json({
+      success: true,
+      message: "Étapes mises à jour avec succès",
+    })
+  }
+)
+
+
+
+/**
+ * @description Get campaign progression steps
+ * @route GET /campaign/:campaignId/steps
+ * @access Authenticated Admin
+ */
+
+export const getCampaignSteps = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const { campaignId } = req.params
+   if(!campaignId) {
+    res.status(400)
+    throw new Error("Id de la campagne requise")
+   }
+    if (!req.user) {
+      res.status(403)
+      throw new Error("Access denied")
+    }
+
+    const campaignWithSteps = await prisma.campaign.findUnique({
+      where: { id: campaignId },
+      include: {
+        steps: {
+          include : {
+             committee : true
+          },
+          orderBy: { order: "asc" },
+        },
+      },
+    })
+
+    if (!campaignWithSteps) {
+      res.status(404)
+      throw new Error("Campaign not found")
+    }
+
+    res.status(200).json(campaignWithSteps.steps)
+  }
+)
+
 
 
 /**
@@ -278,6 +540,7 @@ export const deleteCampaignStep = asyncHandler(
  */
 export const updateCampaign = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+    console.log(req.body)
     const { id } = req.params
     const { name, description, status, targetProjects } = req.body
 
@@ -332,4 +595,41 @@ export const updateCampaign = asyncHandler(
     })
   }
 )
+
+/**
+ * @description Delete a campaign
+ * @route DELETE /campaign/:campaignId
+ * @access ADMIN | SUPER_ADMIN
+ */
+export const deleteCampaign = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user?.id || !["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
+    res.status(403)
+    throw new Error("Accès refusé")
+  }
+
+  const { id } = req.params
+   if(!id){
+    res.status(400)
+    throw new Error("No campaignId")
+   }
+
+  const campaign = await prisma.campaign.findUnique({
+    where: { id },
+    include: { projects: true }
+  })
+
+  if (!campaign) {
+    res.status(404)
+    throw new Error("Campagne introuvable")
+  }
+
+  if (campaign.projects.length > 0) {
+    res.status(400)
+    throw new Error("Impossible de supprimer une campagne contenant des projets")
+  }
+
+  await prisma.campaign.delete({ where: { id } })
+
+  res.status(200).json({ success: true })
+})
 

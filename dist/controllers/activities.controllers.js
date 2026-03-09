@@ -21,6 +21,7 @@ exports.getActivities = (0, express_async_handler_1.default)(async (req, res) =>
         where: {
             userId
         },
+        orderBy: { createdAt: 'desc' },
         select: {
             id: true,
             title: true,

@@ -1,6 +1,7 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.updateProjectSchema = exports.createProjectBodySchema = exports.creditSchema = exports.createSubStepSchema = void 0;
+const enums_1 = require("../generated/prisma/enums");
 const zod_1 = require("zod");
 // ==========================
 // SubStep DTO & Zod Schema
@@ -32,7 +33,9 @@ exports.creditSchema = zod_1.z.object({
     interestRate: zod_1.z.coerce
         .number()
         .min(0, "Taux invalide"),
-    dueDate: zod_1.z.string().datetime(),
+    dueDate: zod_1.z.string({
+        error: (iss) => iss.input === undefined ? "Date decheance non renseigné" : "Invalid input"
+    }),
     monthlyPayment: zod_1.z.coerce
         .number()
         .min(0, "Mensualité invalide"),
@@ -44,6 +47,9 @@ exports.creditSchema = zod_1.z.object({
     path: ["remainingBalance"]
 });
 exports.createProjectBodySchema = zod_1.z.object({
+    type: zod_1.z.nativeEnum(enums_1.ProjectType, {
+        error: (iss) => iss.input === undefined ? "Type requis" : "Type incorrect"
+    }),
     title: zod_1.z.string().min(3),
     description: zod_1.z.string().min(20),
     requestedAmount: zod_1.z.coerce
@@ -64,6 +70,9 @@ exports.createProjectBodySchema = zod_1.z.object({
 });
 exports.updateProjectSchema = zod_1.z.object({
     title: zod_1.z.string().min(3).max(255),
+    type: zod_1.z.nativeEnum(enums_1.ProjectType, {
+        error: (iss) => iss.input === undefined ? "Type requis" : "Type incorrect"
+    }),
     hasCredit: zod_1.z
         .union([zod_1.z.boolean(), zod_1.z.string()])
         .transform((val) => val === true || val === "true"),

@@ -2,7 +2,7 @@ import asyncHandler from "express-async-handler";
 import { AuthRequest } from "types";
 import { Response } from "express";
 import { prisma } from "../lib/prisma";
-import { createCommitteeMemberSchema } from "../schemas/committee.schema";
+import { createCommitteeMemberSchema, updateCommitteeMemberSchema } from "../schemas/committee.schema";
 /**
  * @description Add new member to a committee
  * 
@@ -19,7 +19,7 @@ export const addNewMember = asyncHandler(
         res.status(401)
         throw new Error('Unauthorized')
     }
- console.log('received data :', req.body)
+   
     
     //  Validation Zod
     const data = createCommitteeMemberSchema.parse(req.body);
@@ -39,12 +39,7 @@ export const addNewMember = asyncHandler(
       throw new Error("Committee not found");
     }
 
-    // Appartenance au comite de l'envoyeur
-    const ismember = committee.members?.some( m => m.userId === req.user?.id)
-    if(!ismember){
-        res.status(403)
-        throw new Error('Seuls les membres du comites sont autorises a cette action')
-    }
+   
 
     //  Vérifier si l'utilisateur est déjà membre (doublon)
     const existingMember = await prisma.committeeMember.findFirst({
@@ -100,8 +95,7 @@ export const addNewMember = asyncHandler(
 
     //  Réponse
     res.status(201).json({
-      success: true,
-      data: member,
+    member
     });
   }
 );
@@ -115,13 +109,18 @@ export const addNewMember = asyncHandler(
  */
 export const getCommitteeMembers = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-
+   
+    
     if (!req.user?.id) {
       res.status(401);
       throw new Error("Unauthorized");
     }
 
-    const { committeeId } = req.params as { committeeId?: string };
+    
+
+    
+
+    const { committeeId } = req.params as { committeeId: string };
     
     if (!committeeId) {
       res.status(400);
@@ -131,7 +130,12 @@ export const getCommitteeMembers = asyncHandler(
     // Vérifier que le comité existe
     const committee = await prisma.committee.findUnique({
       where: { id: committeeId },
-      select: { id: true },
+      select: { 
+        id: true 
+       
+
+      },
+
     });
 
     if (!committee) {
@@ -139,20 +143,6 @@ export const getCommitteeMembers = asyncHandler(
       throw new Error("Committee not found");
     }
 
-    //  Vérifier l'appartenance
-    const isMember = await prisma.committeeMember.findUnique({
-      where: {
-        committeeId_userId: {
-          committeeId,
-          userId: req.user.id,
-        },
-      },
-    });
-
-    if (!isMember) {
-      res.status(403);
-      throw new Error("Access denied");
-    }
 
     //  Récupérer les membres
     const members = await prisma.committeeMember.findMany({
@@ -167,12 +157,165 @@ export const getCommitteeMembers = asyncHandler(
             email: true,
           },
         },
+        presences : true
+      },
+    });
+
+    if(members.length < 0){
+      res.status(404)
+      throw new Error("No member found")
+    }
+
+    res.status(200).json({members});
+  }
+);
+
+
+/**
+ * @description Delete a member from a committee
+ * @route DELETE /committee/:committeeId/members/:memberId
+ * @access Private (ADMIN/SUPER_ADMIN)
+ */
+
+
+export const deleteCommitteeMember = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+    const { committeeId, memberId } = req.params as { committeeId?: string, memberId?: string }
+    
+    if (!req.user?.id) {
+      res.status(401)
+      throw new Error("Unauthorized")
+    }
+
+  
+  
+
+    if (!committeeId || !memberId) {
+      res.status(400)
+      throw new Error("committeeId and userId are required")
+    }
+
+    // Vérifier que le comité existe
+    const committee = await prisma.committee.findUnique({
+      where: { id: committeeId },
+      select: { id: true },
+    })
+
+    
+
+    if (!committee) {
+      res.status(404)
+      throw new Error("Committee not found")
+    }
+
+   
+
+    // Vérifier que l'utilisateur qui fait la requête a le droit
+    const requesterMember = await prisma.committeeMember.findUnique({
+      where: { committeeId_userId: { committeeId, userId: req.user.id } },
+    })
+
+
+
+
+    if (!requesterMember || !["president", "secretary","vice_president"].includes(requesterMember.memberRole)) {
+      res.status(403)
+      throw new Error("Access denied")
+    }
+
+    // Supprimer le membre
+    await prisma.committeeMember.delete({
+      where: { id : memberId },
+    })
+
+    res.status(200).json({ message: "Member deleted successfully" })
+  }
+)
+
+
+/**
+ * @description Update a committee member role
+ * @route PATCH /committee/:committeeId/members/:memberId
+ * @access Private (ADMIN, SUPER_ADMIN)
+ */
+
+export const updateCommitteeMember = asyncHandler(
+  async (req: AuthRequest, res: Response) => {
+
+    //  Vérification authentification + rôle
+    if (!req.user?.id || !['ADMIN', 'SUPER_ADMIN'].includes(req.user.role)) {
+      res.status(401);
+      throw new Error("Unauthorized");
+    }
+
+    const { committeeId, memberId } = req.params;
+
+    if(!committeeId || !memberId) {
+      res.status(400)
+      throw new Error("id du comité ou du membre manquant")
+    }
+
+    //  Validation Zod
+    const { memberRole } = updateCommitteeMemberSchema.parse(req.body);
+
+    //  Vérifier que le comité existe
+    const committee = await prisma.committee.findUnique({
+      where: { id: committeeId },
+      include: { members: true }
+    });
+
+    if (!committee) {
+      res.status(404);
+      throw new Error("Committee not found");
+    }
+
+    //  Vérifier que le membre existe
+    const member = await prisma.committeeMember.findUnique({
+      where: { id: memberId },
+    });
+
+    if (!member || member.committeeId !== committeeId) {
+      res.status(404);
+      throw new Error("Member not found in this committee");
+    }
+
+    //  Vérifier unicité des rôles président
+    if (memberRole === "president" || memberRole === "vice_president" || memberRole === "secretary") {
+
+      const roleAlreadyTaken = await prisma.committeeMember.findFirst({
+        where: {
+          committeeId,
+          memberRole,
+          NOT: { id: memberId }, 
+        },
+      });
+
+      if (roleAlreadyTaken) {
+        res.status(409);
+        throw new Error(`Role ${memberRole} is already assigned in this committee`);
+      }
+    }
+
+    //  Update
+    const updatedMember = await prisma.committeeMember.update({
+      where: { id: memberId },
+      data: { memberRole },
+      include: {
+        user: {
+          select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+          },
+        },
       },
     });
 
     res.status(200).json({
       success: true,
-      data: members,
+      data: updatedMember,
     });
   }
 );
+

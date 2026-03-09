@@ -1,11 +1,12 @@
 import asyncHandler from "express-async-handler"
 import { prisma } from "../lib/prisma"
 import { Request, Response } from "express"
-import {createUserSchema, updateUserSchema, roleEnum} from '../schemas/user.schemas'
+import {createUserSchema, updateUserSchema, roleEnum, createAdminUserSchema} from '../schemas/user.schemas'
 import { comparePassword, hashPassword } from "../utils/password"
-import { AuthRequest } from "../types"
+import { AuthRequest, Role } from "../types"
 import { UpdateUserDTO } from "../types/user.dto"
 import { generateRefreshToken, generateToken } from "../utils/auth"
+import { Prisma } from "../generated/prisma/client"
 /**
  * @desc CREATE user
  * @route POST /api/users
@@ -103,26 +104,92 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
  * @route GET /api/users
  * @access Private
  */
-export const getUsers = asyncHandler(async (req:AuthRequest , res: Response) => {
-
-  if(!req.user?.id  || !["SUPER_ADMIN","ADMIN"].includes(req.user?.role)){
+export const getUsers = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user?.id || !["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
     res.status(401)
-    throw new Error("Acces refusé")
+    throw new Error("Accès refusé")
   }
 
+  const { role, isActive, search, date, page, limit } = req.query
 
-  const users = await prisma.user.findMany({
-    orderBy: { createdAt: "desc" }
+  const take = parseInt(limit as string) || 20
+  const skip = (parseInt(page as string) - 1 || 0) * take
+
+  /* ================= BUILD FILTERS ================= */
+  const where: Prisma.UserWhereInput = {}
+
+  if (role && role !== "all") where.role = role as Role
+  if (isActive && isActive !== "all") where.isActive = isActive === "true"
+
+  if (search && typeof search === "string") {
+    where.OR = [
+      { firstName: { contains: search, mode: "insensitive" } },
+      { lastName: { contains: search, mode: "insensitive" } },
+      { email: { contains: search, mode: "insensitive" } },
+    ]
+  }
+
+  if (date && date !== "all") {
+    const now = new Date()
+    const from = new Date()
+    if (date === "week") from.setDate(now.getDate() - 7)
+    else if (date === "month") from.setMonth(now.getMonth() - 1)
+    else if (date === "year") from.setFullYear(now.getFullYear() - 1)
+    where.createdAt = { gte: from }
+  }
+
+  /* ================= QUERY ================= */
+  const [users, total] = await prisma.$transaction([
+    prisma.user.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      skip,
+      take,
+      select: {
+        id: true,
+        firstName: true,
+        lastName: true,
+        email: true,
+        role: true,
+        isActive: true,
+        createdAt: true,
+        lastLoginAt: true,
+        isLocked: true,
+
+           pme: where.role === "PME" ? {
+      select: {
+        id: true,
+        name: true,
+        isActive: true,
+        type: true,
+        size: true,
+        description: true,
+        activityField: true,
+        email: true,
+        phone: true,
+        website: true,
+        country: true,
+        administrative: true,
+        city: true,
+        address: true,
+        ownerId: true,
+        promoter : true
+      }
+    } : false,
+      },
+    }),
+    prisma.user.count({ where }),
+  ])
+
+  res.status(200).json({
+    data: users,
+    meta: {
+      total,
+      page: parseInt(page as string) || 1,
+      limit: take,
+      totalPages: Math.ceil(total / take),
+    },
   })
-
-
-  if(!users){
-    res.status(404)
-    throw new Error("No user found")
-  }
-
-
-  res.status(200).json(users)
 })
 
 
@@ -220,7 +287,7 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
  * @route DELETE /api/users/:id
  * @access Private
  */
-export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
+export const deleteUser = asyncHandler(async (req: AuthRequest, res: Response) => {
   const id = req.params.id
   if (!id) {
     res.status(400)
@@ -241,4 +308,71 @@ export const deleteUser = asyncHandler(async (req: Request, res: Response) => {
   })
 
   res.status(204).send()
+})
+
+/**
+ * @description Add a new admin
+ * @route POST/users/admin
+ * @access Admin
+ * **/ 
+export const createAdmin = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user?.id) {
+    res.status(401)
+    throw new Error("Unauthorized")
+  }
+
+  if (req.user.role !== "SUPER_ADMIN") {
+    res.status(403)
+    throw new Error("Forbidden: Autorisations insuffisantes")
+  }
+
+  const parsed = createAdminUserSchema.parse(req.body);
+  if(!parsed){
+    res.status(400)
+    throw new Error("Invalid datas")
+  }
+
+  const { firstName, lastName, email, password, role } = parsed
+
+  if (!email || !password) {
+    res.status(400)
+    throw new Error("Email et mot de passe requis")
+  }
+
+  /* ================= CHECK EMAIL ================= */
+  const existing = await prisma.user.findUnique({ where: { email } })
+  if (existing) {
+    res.status(409)
+    throw new Error("Un utilisateur avec cet email existe déjà")
+  }
+
+  /* ================= HASH PASSWORD ================= */
+  const passwordHash = await hashPassword(password)
+
+  /* ================= CREATE ================= */
+  const adminUser = await prisma.user.create({
+    data: {
+      firstName,
+      lastName,
+      email,
+      passwordHash,
+      role,
+      isActive: true,
+      verificationCode: null,
+      codeIsVerified: true,
+      codeExpires: null,
+    },
+    select: {
+      id: true,
+      firstName: true,
+      lastName: true,
+      email: true,
+      role: true,
+      isActive: true,
+      createdAt: true,
+    },
+  })
+
+  /* ================= RESPONSE ================= */
+  res.status(201).json(adminUser)
 })

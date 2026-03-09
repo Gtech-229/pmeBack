@@ -12,6 +12,11 @@ import activitiesRoutes from './routes/activities.routes'
 import committeeRoutes from './routes/committee.route'
 import dashboardRoutes from './routes/dashboard.route'
 import campaignRoutes from './routes/campaign.route'
+import adminsnRoutes from './routes/admin.routes'
+import sectorsRoutes from './routes/sector.routes'
+import paramsRoutes from './routes/generalParams.routes'
+import committeeMembersRoutes from './routes/committeeMembers.routes'
+import committeeMeetingsRoutes from './routes/committeeMeetings.routes'
 import { createRateLimiter } from "./middlewares/ratelimit";
 // Initialisations
 dotenv.config()
@@ -51,8 +56,13 @@ app.use("/api/projects",projectsRoutes);
 app.use('/api/onboarding/pme',pmeRoutes)
 app.use("/api/activities",activitiesRoutes);
 app.use("/api/committee",committeeRoutes);
-app.use("/api/dashboard", dashboardRoutes)
-app.use("/api/campaign", campaignRoutes)
+app.use('/api/committee/:committeeId/meetings', committeeMeetingsRoutes);
+app.use('/api/committee/:committeeId/members', committeeMembersRoutes);
+app.use("/api/dashboard", dashboardRoutes);
+app.use("/api/campaign", campaignRoutes);
+app.use("/api/admin", adminsnRoutes);
+app.use("/api/sectors", sectorsRoutes);
+app.use("/api/params", paramsRoutes);
 
 
 app.use(errorHandler);

@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteUser = exports.updateUser = exports.getUserById = exports.getUsers = exports.createUser = void 0;
+exports.createAdmin = exports.deleteUser = exports.updateUser = exports.getUserById = exports.getUsers = exports.createUser = void 0;
 const express_async_handler_1 = __importDefault(require("express-async-handler"));
 const prisma_1 = require("../lib/prisma");
 const user_schemas_1 = require("../schemas/user.schemas");
@@ -64,7 +64,7 @@ exports.createUser = (0, express_async_handler_1.default)(async (req, res) => {
     // Set refresh token in httpOnly cookie
     res.cookie("refreshToken", refreshTkn, {
         httpOnly: true,
-        secure: process.env.NODE_ENV !== 'development',
+        secure: process.env.NODE_ENV === 'production',
         sameSite: "strict",
         maxAge: 7 * 24 * 60 * 60 * 1000
     });
@@ -74,7 +74,7 @@ exports.createUser = (0, express_async_handler_1.default)(async (req, res) => {
         sameSite: "strict",
         maxAge: 15 * 60 * 1000 //15m
     });
-    res.status(201).json(user);
+    res.status(201).json({ msg: "Created" });
 });
 /**
  * @desc GET all users
@@ -82,18 +82,87 @@ exports.createUser = (0, express_async_handler_1.default)(async (req, res) => {
  * @access Private
  */
 exports.getUsers = (0, express_async_handler_1.default)(async (req, res) => {
-    if (!req.user?.id || !["SUPER_ADMIN", "ADMIN"].includes(req.user?.role)) {
+    if (!req.user?.id || !["SUPER_ADMIN", "ADMIN"].includes(req.user.role)) {
         res.status(401);
-        throw new Error("Not authorized");
+        throw new Error("Accès refusé");
     }
-    const users = await prisma_1.prisma.user.findMany({
-        orderBy: { createdAt: "desc" }
+    const { role, isActive, search, date, page, limit } = req.query;
+    const take = parseInt(limit) || 20;
+    const skip = (parseInt(page) - 1 || 0) * take;
+    /* ================= BUILD FILTERS ================= */
+    const where = {};
+    if (role && role !== "all")
+        where.role = role;
+    if (isActive && isActive !== "all")
+        where.isActive = isActive === "true";
+    if (search && typeof search === "string") {
+        where.OR = [
+            { firstName: { contains: search, mode: "insensitive" } },
+            { lastName: { contains: search, mode: "insensitive" } },
+            { email: { contains: search, mode: "insensitive" } },
+        ];
+    }
+    if (date && date !== "all") {
+        const now = new Date();
+        const from = new Date();
+        if (date === "week")
+            from.setDate(now.getDate() - 7);
+        else if (date === "month")
+            from.setMonth(now.getMonth() - 1);
+        else if (date === "year")
+            from.setFullYear(now.getFullYear() - 1);
+        where.createdAt = { gte: from };
+    }
+    /* ================= QUERY ================= */
+    const [users, total] = await prisma_1.prisma.$transaction([
+        prisma_1.prisma.user.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+            skip,
+            take,
+            select: {
+                id: true,
+                firstName: true,
+                lastName: true,
+                email: true,
+                role: true,
+                isActive: true,
+                createdAt: true,
+                lastLoginAt: true,
+                isLocked: true,
+                pme: where.role === "PME" ? {
+                    select: {
+                        id: true,
+                        name: true,
+                        isActive: true,
+                        type: true,
+                        size: true,
+                        description: true,
+                        activityField: true,
+                        email: true,
+                        phone: true,
+                        website: true,
+                        country: true,
+                        administrative: true,
+                        city: true,
+                        address: true,
+                        ownerId: true,
+                        promoter: true
+                    }
+                } : false,
+            },
+        }),
+        prisma_1.prisma.user.count({ where }),
+    ]);
+    res.status(200).json({
+        data: users,
+        meta: {
+            total,
+            page: parseInt(page) || 1,
+            limit: take,
+            totalPages: Math.ceil(total / take),
+        },
     });
-    if (!users) {
-        res.status(404);
-        throw new Error("No user found");
-    }
-    res.status(200).json(users);
 });
 /**
  *@desc  GET user by id
@@ -191,5 +260,63 @@ exports.deleteUser = (0, express_async_handler_1.default)(async (req, res) => {
         where: { id }
     });
     res.status(204).send();
+});
+/**
+ * @description Add a new admin
+ * @route POST/users/admin
+ * @access Admin
+ * **/
+exports.createAdmin = (0, express_async_handler_1.default)(async (req, res) => {
+    if (!req.user?.id) {
+        res.status(401);
+        throw new Error("Unauthorized");
+    }
+    if (req.user.role !== "SUPER_ADMIN") {
+        res.status(403);
+        throw new Error("Forbidden: Autorisations insuffisantes");
+    }
+    const parsed = user_schemas_1.createAdminUserSchema.parse(req.body);
+    if (!parsed) {
+        res.status(400);
+        throw new Error("Invalid datas");
+    }
+    const { firstName, lastName, email, password, role } = parsed;
+    if (!email || !password) {
+        res.status(400);
+        throw new Error("Email et mot de passe requis");
+    }
+    /* ================= CHECK EMAIL ================= */
+    const existing = await prisma_1.prisma.user.findUnique({ where: { email } });
+    if (existing) {
+        res.status(409);
+        throw new Error("Un utilisateur avec cet email existe déjà");
+    }
+    /* ================= HASH PASSWORD ================= */
+    const passwordHash = await (0, password_1.hashPassword)(password);
+    /* ================= CREATE ================= */
+    const adminUser = await prisma_1.prisma.user.create({
+        data: {
+            firstName,
+            lastName,
+            email,
+            passwordHash,
+            role,
+            isActive: true,
+            verificationCode: null,
+            codeIsVerified: true,
+            codeExpires: null,
+        },
+        select: {
+            id: true,
+            firstName: true,
+            lastName: true,
+            email: true,
+            role: true,
+            isActive: true,
+            createdAt: true,
+        },
+    });
+    /* ================= RESPONSE ================= */
+    res.status(201).json(adminUser);
 });
 //# sourceMappingURL=user.controllers.js.map

@@ -174,9 +174,11 @@ export const getMe = asyncHandler(
                   include : {
                     campaignStep : true
                   }
-                }
+                },
+                campaign : {include : {steps : true}}
               }
             },
+            promoter : true
            
           }
         },
@@ -199,7 +201,28 @@ export const getMe = asyncHandler(
       throw new Error("User not found")
     }
 
-    res.status(200).json(user)
+    res.status(200).json({
+      ...user,
+       openCampaigns: await prisma.campaign.findMany({
+    where: { status: "OPEN" },
+    select: {
+      id: true,
+      name: true,
+      description: true,
+      start_date: true,
+      end_date: true,
+      targetProjects: true,
+      status : true,
+      steps : {include : {projectSteps : true}},
+      type: true,
+      criteria: {
+        include: {
+          sectors: { include: { sector: true } }
+        }
+      }
+    }
+  })
+    })
   }
 )
 
@@ -448,7 +471,7 @@ export const resetPassword = asyncHandler(async(req : Request, res:Response)=>{
   await sendEmail({
     to: user.email,
     subject: "Réinitialisation de votre mot de passe",
-    html: resetPasswordTemplate(resetUrl),
+    html: await resetPasswordTemplate(resetUrl),
   })
 
    res.status(200).json({
@@ -569,7 +592,7 @@ export const sendCode = asyncHandler(async (req: AuthRequest, res: Response) => 
   await sendEmail({
   to: `${email}`,
   subject: "Validation de compte",
-   html: accountValidationTemplate({userName : user.firstName, code, expiresAt})
+   html: await accountValidationTemplate({userName : user.firstName, code, expiresAt})
 })
 
   // Réponse frontend
@@ -607,7 +630,7 @@ export const verifyCode = asyncHandler(async (req : AuthRequest, res: Response) 
     throw new Error("Code inexistant")
   }
 
-  // ⏱ Vérification expiration
+  //  Vérification expiration
   if (user.codeExpires < new Date()) {
     res.status(400)
     throw new Error("Code expiré")

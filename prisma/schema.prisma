@@ -49,7 +49,13 @@ model User {
   pme            PME?   
   activity          Activity[]  
   committeMember      CommitteeMember[]
-  
+   promoter Promoter?
+
+  @@index([role])
+  @@index([isActive])
+  @@index([createdAt])
+  @@index([firstName, lastName , createdAt]) 
+   @@index([email])
 
 }
 
@@ -90,8 +96,7 @@ model PME {
   city           String?           
   address        String
 
-  /* --- Rôle utilisateur --- */
-  userRole    String?
+ 
   activityField   String
 
   /* --- Relations --- */
@@ -103,6 +108,7 @@ model PME {
 
   /* --- Statut --- */
   isActive    Boolean  @default(true)
+  promoter Promoter?
 
   /* --- Dates --- */
   createdAt   DateTime @default(now())
@@ -119,6 +125,7 @@ model Project {
   status              ProjectStatus @default(pending)
   requestedAmount     Float
   fundedAmount        Float?
+  type                ProjectType
   fundDisbursementDates DateTime[]
    documents              Document[]
   currentStepOrder   Int?
@@ -129,12 +136,33 @@ model Project {
  hasCredit        Boolean
  meetingProject      MeetingProjectDecision[]
   campaignId    String
-  campaign      Campaign @relation(fields: [campaignId], references: [id])
+  campaign      Campaign @relation(fields: [campaignId], references: [id] ,onDelete: Cascade)
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
   @@index([status])
   @@index([createdAt])
   @@unique([campaignId, pmeId])
+
+
+}
+
+model Promoter {
+  id              String         @id @default(uuid())
+  firstName       String?
+  lastName        String?
+  gender          Gender?
+  birthDate       DateTime?
+  hasDisability   Boolean        @default(false)
+  disabilityType  String?
+  maritalStatus   MaritalStatus?
+  role             String?
+  // Relations
+  userId          String         @unique
+  user            User           @relation(fields: [userId], references: [id])
+  pmeId           String?        @unique
+  pme             PME?           @relation(fields: [pmeId], references: [id])
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 }
 
 model ProjectStatusHistory {
@@ -230,11 +258,15 @@ model Campaign {
   steps       CampaignStep[]
  projects      Project[]
  targetProjects Int? 
+ type     CampaignType  @default(MONO_PROJECT)
+  criteria      CampaignCriteria?
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   @@index([status])
   @@index([start_date, end_date])
+   @@index([type])           
+  @@index([createdAt])
 }
 
 
@@ -243,7 +275,7 @@ model CampaignStep {
   id          String   @id @default(uuid())
 
   campaignId  String
-  campaign    Campaign @relation(fields: [campaignId], references: [id])
+  campaign    Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade ) 
 
   name        String       
   order       Int
@@ -252,46 +284,58 @@ model CampaignStep {
 
   setsProjectStatus   ProjectStatus?   
  
- 
   createdAt   DateTime @default(now())
-   projectSteps ProjectStepProgress[]
+  projectSteps ProjectStepProgress[]
+
   @@unique([campaignId, order])
+  @@unique([campaignId, setsProjectStatus])
+
+  @@index([campaignId]) 
 }
 
- 
+model CampaignCriteria {
+  id            String   @id @default(uuid())
+  
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  campaignId    String   @unique
 
-enum CampaignStatus {
-  DRAFT
-  OPEN
-  CLOSED
+  minAge        Int?
+  maxAge        Int?
+  hasDisability Boolean?
+  gender        Gender?
+  maritalStatus MaritalStatus?
+  sectors CampaignCriteriaSector[]
+  projectType   ProjectType?
+  
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+
+   @@index([projectType])    
+  @@index([minAge, maxAge]) 
+  @@index([campaignId])
+  @@index([hasDisability])
+   @@index([gender])
+  @@index([maritalStatus])
 }
 
-
-
-
-enum ActivityType {
-  WELCOME
-  PROJECT_CREATED
-  PROJECT_APPROVED
-  PROJECT_REJECTED
-  ACCOUNT_VERIFIED
+model Sector {
+  id        String   @id @default(uuid())
+  name      String   @unique
+  createdAt DateTime @default(now())
+  criteria  CampaignCriteriaSector[]
 }
 
-
-
-enum ProjectStatus {
-  pending
-  approved
-  rejected
-  funded
-  completed
-  failed
-  suspended
+model CampaignCriteriaSector {
+  criteriaId String
+  sectorId   String
+  criteria   CampaignCriteria @relation(fields: [criteriaId], references: [id], onDelete: Cascade)
+  sector     Sector           @relation(fields: [sectorId], references: [id], onDelete: Cascade)
+  @@id([criteriaId, sectorId])
+   @@index([sectorId])       
+  @@index([criteriaId]) 
 }
-
-
-
-
 
 
 model Committee {
@@ -300,13 +344,13 @@ model Committee {
   description String?
 
  campaignId    String
-  campaign      Campaign @relation(fields: [campaignId], references: [id])
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
   
   members     CommitteeMember[]
   meetings    CommitteeMeeting[]
 
-  stepId        String   @unique
-  step          CampaignStep @relation(fields: [stepId], references: [id])
+  stepId        String ?  @unique
+  step          CampaignStep? @relation(fields: [stepId], references: [id], onDelete: SetDefault)
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -460,6 +504,22 @@ model ProjectCredit {
 }
 
 
+model GeneralParams {
+  id          String   @id @default(uuid())
+  appName     String   @default("Suivi-MP")
+  logoUrl     String?
+  logoPublicId String?
+  primaryColor String?
+  contactEmail String?
+  contactPhone String?
+  address     String?
+  website     String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+
+
 
 
 
@@ -516,6 +576,60 @@ enum Role {
   PME
   FINANCIER
 }
+
+ 
+
+enum CampaignStatus {
+  DRAFT
+  OPEN
+  CLOSED
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  OTHER
+}
+
+enum MaritalStatus {
+  SINGLE
+  MARRIED
+  DIVORCED
+  WIDOWED
+}
+
+enum ProjectType {
+  INDIVIDUAL
+  COLLECTIVE
+}
+
+
+enum ActivityType {
+  WELCOME
+  PROJECT_CREATED
+  PROJECT_APPROVED
+  PROJECT_REJECTED
+  ACCOUNT_VERIFIED
+}
+
+
+
+enum ProjectStatus {
+  pending
+  approved
+  rejected
+  funded
+  completed
+  failed
+  suspended
+}
+
+
+enum CampaignType {
+  MULTI_PROJECT
+  MONO_PROJECT
+}
+
 
 
 

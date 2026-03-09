@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.verifyCode = exports.sendCode = exports.changePassword = exports.refreshToken = exports.getMe = exports.logout = exports.login = void 0;
+exports.verifyCode = exports.sendCode = exports.newPassword = exports.resetPassword = exports.changePassword = exports.refreshToken = exports.getMe = exports.logout = exports.login = void 0;
 const express_async_handler_1 = __importDefault(require("express-async-handler"));
 const prisma_1 = require("../lib/prisma");
 const password_1 = require("../utils/password");
@@ -13,6 +13,8 @@ const jsonwebtoken_1 = __importDefault(require("jsonwebtoken"));
 const bcryptjs_1 = __importDefault(require("bcryptjs"));
 const sendEmail_1 = require("../utils/sendEmail");
 const generateCode_1 = require("../utils/generateCode");
+const resetPassword_template_1 = require("../utils/templates/emails/resetPassword.template");
+const accountValidation_template_1 = require("../utils/templates/emails/accountValidation.template");
 /**
  * @desc    Login user
  * @route   POST /api/auth/login
@@ -28,15 +30,11 @@ exports.login = (0, express_async_handler_1.default)(async (req, res) => {
     const user = await prisma_1.prisma.user.findUnique({
         where: { email }
     });
-    if (!user) {
+    if (!user || !(await (0, password_1.comparePassword)(password, user.passwordHash))) {
         res.status(404);
-        throw new Error("Compte innexistant ");
+        throw new Error("Email ou mot de passe incorrect");
     }
-    const isMatch = await (0, password_1.comparePassword)(password, user.passwordHash);
-    if (!isMatch) {
-        res.status(401);
-        throw new Error("Mot de passe incorrect");
-    }
+    // Generer les tokens
     const token = (0, auth_1.generateToken)({
         id: user.id,
         role: user.role
@@ -137,9 +135,11 @@ exports.getMe = (0, express_async_handler_1.default)(async (req, res) => {
                                 include: {
                                     campaignStep: true
                                 }
-                            }
+                            },
+                            campaign: { include: { steps: true } }
                         }
                     },
+                    promoter: true
                 }
             },
             id: true,
@@ -158,7 +158,28 @@ exports.getMe = (0, express_async_handler_1.default)(async (req, res) => {
         res.status(404);
         throw new Error("User not found");
     }
-    res.status(200).json(user);
+    res.status(200).json({
+        ...user,
+        openCampaigns: await prisma_1.prisma.campaign.findMany({
+            where: { status: "OPEN" },
+            select: {
+                id: true,
+                name: true,
+                description: true,
+                start_date: true,
+                end_date: true,
+                targetProjects: true,
+                status: true,
+                steps: { include: { projectSteps: true } },
+                type: true,
+                criteria: {
+                    include: {
+                        sectors: { include: { sector: true } }
+                    }
+                }
+            }
+        })
+    });
 });
 const REFRESH_SECRET = process.env.JWT_SECRET;
 /**
@@ -245,8 +266,8 @@ exports.refreshToken = (0, express_async_handler_1.default)(async (req, res) => 
 });
 /**
  * @des Change password
- * @route PUT/auth/change-password
- * @access Private
+ * @route POST/auth/change-password
+ * @access Connected Private
  * **/
 exports.changePassword = (0, express_async_handler_1.default)(async (req, res) => {
     const userId = req.user?.id;
@@ -294,6 +315,94 @@ exports.changePassword = (0, express_async_handler_1.default)(async (req, res) =
     });
 });
 /**
+ * @des Reset password
+ * @route POST/auth/reset-password
+ * @access Public
+ * **/
+exports.resetPassword = (0, express_async_handler_1.default)(async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        res.status(400);
+        throw new Error("Email requis");
+    }
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { email },
+    });
+    // Toujours répondre pareil (anti-enumeration)
+    if (!user) {
+        res.status(200).json({
+            message: "Si un compte existe, un email de réinitialisation a été envoyé",
+        });
+        return;
+    }
+    if (user.resetPasswordToken && user.resetPasswordExpires && user.resetPasswordExpires > new Date()) {
+        const now = new Date();
+        const diffMs = user.resetPasswordExpires.getTime() - now.getTime(); // différence en ms
+        const diffMinutes = Math.ceil(diffMs / 1000 / 60); // convertir en minutes et arrondir vers le haut
+        throw new Error(`Un lien de réinitialisation a été envoyé à votre email. Suivez le ou réessayez dans ${diffMinutes} minute${diffMinutes > 1 ? "s" : ""}.`);
+    }
+    //  Génération token sécurisé
+    const rawToken = crypto.randomUUID().toString();
+    const hashedToken = await (0, password_1.hashPassword)(rawToken);
+    const expires = new Date(Date.now() + 1000 * 60 * 60); //1h
+    await prisma_1.prisma.user.update({
+        where: { id: user.id },
+        data: {
+            resetPasswordToken: hashedToken,
+            resetPasswordExpires: expires,
+        },
+    });
+    const frontendUrl = process.env.NODE_ENV === 'production' ? "https://suivi-mp/client.com" : "http://localhost:3000";
+    const resetUrl = `${frontendUrl}/reset-password/${rawToken}`;
+    // Email
+    await (0, sendEmail_1.sendEmail)({
+        to: user.email,
+        subject: "Réinitialisation de votre mot de passe",
+        html: await (0, resetPassword_template_1.resetPasswordTemplate)(resetUrl),
+    });
+    res.status(200).json({
+        message: "Si un compte existe, un email de réinitialisation a été envoyé",
+        returnSection: ['ADMIN', 'SUPER_ADMIN'].includes(user.role) ? "admin" : "client"
+    });
+});
+/**
+ * @description Reset the user's password
+ * @Route POST/auth/new-password
+ * @access Private
+ * **/
+exports.newPassword = (0, express_async_handler_1.default)(async (req, res) => {
+    const { token, password } = req.body;
+    if (!token || !password) {
+        res.status(400);
+        throw new Error("Token et nouveau mot de passe sont requis");
+    }
+    // Chercher l'utilisateur correspondant au token et vérifier expiration
+    const users = await prisma_1.prisma.user.findMany({
+        where: {
+            resetPasswordExpires: { gte: new Date() }, // token non expiré
+        },
+    });
+    const user = users?.find(u => u.resetPasswordToken && (0, password_1.comparePassword)(token, u.resetPasswordToken));
+    if (!user) {
+        res.status(400);
+        throw new Error("Lien invalide ou expiré");
+    }
+    // Hasher le nouveau mot de passe
+    const hashedPassword = await (0, password_1.hashPassword)(password);
+    // Mettre à jour l'utilisateur : mot de passe + suppression du token
+    await prisma_1.prisma.user.update({
+        where: { id: user.id },
+        data: {
+            passwordHash: hashedPassword,
+            resetPasswordToken: null,
+            resetPasswordExpires: null,
+        },
+    });
+    res.status(200).json({
+        message: "Mot de passe mis à jour avec succès",
+    });
+});
+/**
  * @description Send verification code
  * @Route POST/auth/send-code
  * @access Private
@@ -338,56 +447,22 @@ exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
     // Send resend code
     await (0, sendEmail_1.sendEmail)({
         to: `${email}`,
-        subject: "Account validation",
-        html: `
-    <div style="font-family: Arial, sans-serif; line-height: 1.6; color: #111;">
-
-      <p style="font-size: 22px; font-weight: 500;">
-        Salut ${user.firstName},
-      </p>
-
-      <p style="font-size: 18px;">
-        Veuillez utiliser le code ci-dessous  vérifier votre adresse e-mail en vue de commencer
-à collaborer avec les administrateurs de  <strong>PME</strong>.
-      </p>
-
-      <p style="font-size: 26px; font-weight: bold; color: #002E3C; letter-spacing: 4px;">
-        ${code}
-      </p>
-
-      <p style="font-size: 16px;">
-        Ce code expirera dans <strong>3 minutes</strong>, à
-        <span style="color: #002E3C; font-weight: 500;">
-          ${expiresAt.toLocaleTimeString("fr-FR", {
-            hour: "2-digit",
-            minute: "2-digit",
-            hour12: false,
-        })}
-        </span>.
-      </p>
-
-    
-
-      <p style="font-size: 14px; color: #555;">
-        Si vous n'êtes pas à l'origine de ce code ou  si vous avez déjà vérifié votre compte, veuillez ignorer ce courriel.
-Ou contactez le support Suivi-Mp si vous avez des questions.
-      </p>
-
-      <p style="font-size: 12px; color: #999;">
-        — Suivi-Mp , Votre plateforme de gestion de projet
-      </p>
-
-    </div>
-  `
+        subject: "Validation de compte",
+        html: await (0, accountValidation_template_1.accountValidationTemplate)({ userName: user.firstName, code, expiresAt })
     });
     // Réponse frontend
     res.status(200).json({
         message: 'Verification code sent',
     });
 });
+/**
+ * @description Verify account validation code
+ * @route POST/auth/verify-code
+ * @access Connected user
+ * **/
 exports.verifyCode = (0, express_async_handler_1.default)(async (req, res) => {
     if (!req.user?.id) {
-        throw new Error('Utiliisateur non connecter');
+        throw new Error('Utiliisateur non connecté');
     }
     const { email, code } = req.body;
     if (!email || !code) {
@@ -401,7 +476,7 @@ exports.verifyCode = (0, express_async_handler_1.default)(async (req, res) => {
         res.status(400);
         throw new Error("Code inexistant");
     }
-    // ⏱ Vérification expiration
+    //  Vérification expiration
     if (user.codeExpires < new Date()) {
         res.status(400);
         throw new Error("Code expiré");

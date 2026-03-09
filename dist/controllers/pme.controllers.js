@@ -3,7 +3,7 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deleteProfileImg = exports.updateProfile = exports.getPme = exports.validateAccount = exports.createPMESchema = void 0;
+exports.getPmes = exports.deleteProfileImg = exports.updateProfile = exports.getPme = exports.validateAccount = exports.createPMESchema = void 0;
 const express_async_handler_1 = __importDefault(require("express-async-handler"));
 const prisma_1 = require("../lib/prisma");
 const pme_onBoarding_1 = require("../schemas/pme.onBoarding");
@@ -12,7 +12,7 @@ const UploadToCloudinary_1 = require("../utils/UploadToCloudinary");
 exports.createPMESchema = pme_onBoarding_1.fullOnboardingSchema.strict();
 /**
  * @description : Set a user's account as validated and create his PME
- * @Route : POST/
+ * @Route : POST/api/onboarding/pme
  */
 exports.validateAccount = (0, express_async_handler_1.default)(async (req, res) => {
     if (!req.user?.id) {
@@ -20,37 +20,23 @@ exports.validateAccount = (0, express_async_handler_1.default)(async (req, res) 
         throw new Error("User not authenticated");
     }
     const userId = req.user.id;
-    console.log("req body:", req.body);
-    // 🔹 Zod validation
+    /* ---------------- VALIDATION ---------------- */
     const parsed = exports.createPMESchema.safeParse(req.body);
     if (!parsed.success) {
         res.status(400);
         throw parsed.error;
     }
-    const data = parsed.data;
-    // 🔹 Normalisation localisation
-    // Si administrative existe et contient des clés, on la garde
-    // Sinon on met administrative à null et on garde city
+    const { promoter, ...data } = parsed.data;
+    /* ---------------- LOCATION ---------------- */
     const hasAdministrative = data.administrative &&
         Object.keys(data.administrative).length > 0;
-    let location;
-    if (!hasAdministrative) {
-        location = {
-            administrative: {},
-            city: data.city,
-        };
-    }
-    location = {
-        administrative: data.administrative,
-        city: null
-    };
-    // 🔹 Vérification de l'utilisateur
+    const location = hasAdministrative
+        ? { administrative: data.administrative, city: null }
+        : { administrative: {}, city: data.city ?? null };
+    /* ---------------- USER CHECK ---------------- */
     const user = await prisma_1.prisma.user.findUnique({
         where: { id: userId },
-        select: {
-            codeIsVerified: true,
-            validatedAt: true
-        },
+        select: { codeIsVerified: true, validatedAt: true }
     });
     if (!user) {
         res.status(404);
@@ -64,9 +50,9 @@ exports.validateAccount = (0, express_async_handler_1.default)(async (req, res) 
         res.status(409);
         throw new Error("Account already validated");
     }
-    // 🔹 Transaction Prisma
-    await prisma_1.prisma.$transaction([
-        prisma_1.prisma.pME.create({
+    /* ---------------- TRANSACTION ---------------- */
+    await prisma_1.prisma.$transaction(async (tx) => {
+        const createdPme = await tx.pME.create({
             data: {
                 ownerId: userId,
                 name: data.name,
@@ -79,26 +65,38 @@ exports.validateAccount = (0, express_async_handler_1.default)(async (req, res) 
                 country: data.country,
                 administrative: location.administrative,
                 city: location.city,
-                activityField: data.activityField,
-                userRole: data.userRole ?? ""
+                activityField: data.activityField
             }
-        }),
-        prisma_1.prisma.user.update({
+        });
+        await tx.promoter.create({
+            data: {
+                userId,
+                pmeId: createdPme.id,
+                gender: promoter.gender,
+                birthDate: new Date(promoter.birthDate),
+                maritalStatus: promoter.maritalStatus,
+                hasDisability: promoter.hasDisability,
+                disabilityType: promoter.hasDisability ? promoter.disabilityType : null,
+                role: promoter.role ?? "",
+            }
+        });
+        await tx.user.update({
             where: { id: userId },
             data: {
                 validatedAt: new Date(),
                 isActive: true,
-            },
-        }),
-        prisma_1.prisma.activity.create({
+            }
+        });
+        await tx.activity.create({
             data: {
-                type: 'ACCOUNT_VERIFIED',
+                type: "ACCOUNT_VERIFIED",
                 title: "Compte Vérifié",
                 message: "Félicitations. La vérification de votre organisation a été effectuée avec succès. Vous pouvez désormais procéder à la soumission d'un projet.",
-                userId
+                userId,
+                pmeId: createdPme.id,
             }
-        })
-    ]);
+        });
+    });
     res.status(200).json({
         success: true,
         message: "Account successfully validated",
@@ -121,7 +119,6 @@ exports.getPme = (0, express_async_handler_1.default)(async (req, res) => {
             ownerId: req.user.id,
         },
         relationLoadStrategy: 'join',
-        // Order when pme 'll be able to get many projects
         include: {
             projects: {
                 include: {
@@ -218,6 +215,45 @@ exports.deleteProfileImg = (0, express_async_handler_1.default)(async (req, res)
     });
     res.status(200).json({
         message: "Profile image deleted successfully"
+    });
+});
+exports.getPmes = (0, express_async_handler_1.default)(async (req, res) => {
+    if (!req.user) {
+        res.status(403);
+        throw new Error("Access denied");
+    }
+    const { search, page, limit } = req.query;
+    const take = parseInt(limit) || 20;
+    const skip = (parseInt(page) - 1 || 0) * take;
+    const where = {
+        ...(search
+            ? {
+                OR: [
+                    { name: { contains: search, mode: "insensitive" } },
+                    { email: { contains: search, mode: "insensitive" } },
+                    { city: { contains: search, mode: "insensitive" } },
+                    { activityField: { contains: search, mode: "insensitive" } },
+                ],
+            }
+            : {}),
+    };
+    const [data, total] = await prisma_1.prisma.$transaction([
+        prisma_1.prisma.pME.findMany({
+            where,
+            orderBy: { createdAt: "desc" },
+            skip,
+            take,
+        }),
+        prisma_1.prisma.pME.count({ where }),
+    ]);
+    res.status(200).json({
+        data,
+        meta: {
+            total,
+            page: parseInt(page) || 1,
+            limit: take,
+            totalPages: Math.ceil(total / take),
+        },
     });
 });
 //# sourceMappingURL=pme.controllers.js.map

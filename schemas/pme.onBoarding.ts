@@ -30,12 +30,7 @@ export const step1Schema = z.object({
  .string()
  .min(4,{
   error : (iss) => iss.input === undefined ? "Saisissew votre secteur d'activite" : "Entree invalide"
- }),
-    
-
-  userRole: z
-    .string()
-    .optional(),
+ })
 })
 
 
@@ -114,13 +109,42 @@ export const step2Schema  = z.object({
     }
   })
 
+  export const promoterSchema = z.object({
+  gender: z.enum(["MALE", "FEMALE", "OTHER"], {
+    error: (iss) => iss.input === undefined ? "Sélectionnez un genre" : "Invalid input"
+  }),
+  birthDate: z.string({
+    error: (iss) => iss.input === undefined ? "Date de naissance requise" : "Invalid input"
+  }),
+  maritalStatus: z.enum(["SINGLE", "MARRIED", "DIVORCED", "WIDOWED"], {
+    error: (iss) => iss.input === undefined ? "Sélectionnez une situation" : "Invalid input"
+  }),
+  hasDisability: z.boolean(),
+  disabilityType: z.string().optional(),
+  role : z.string().optional()
+}).superRefine((data, ctx) => {
+  if (data.hasDisability && (!data.disabilityType || !data.disabilityType.trim())) {
+    ctx.addIssue({
+      code: z.ZodIssueCode.custom,
+      path: ["disabilityType"],
+      message: "Veuillez préciser le type de handicap",
+    })
+  }
+})
 
+
+export const step4Schema = z.object({
+  promoter: promoterSchema
+})
 
 export const fullOnboardingSchema =
   step1Schema
+    .merge(step4Schema)
     .merge(step2Schema)
-    
+
+export type OnboardingFormValues = z.infer<typeof fullOnboardingSchema>
+export const createPMESchema = fullOnboardingSchema.strict()
 
 
 
-    export type OnboardingFormValues = z.infer<typeof fullOnboardingSchema>
+

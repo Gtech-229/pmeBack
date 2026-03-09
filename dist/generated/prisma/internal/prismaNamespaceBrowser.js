@@ -48,7 +48,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.JsonNullValueFilter = exports.NullsOrder = exports.QueryMode = exports.NullableJsonNullValueInput = exports.SortOrder = exports.ProjectCreditScalarFieldEnum = exports.ReportDocumentScalarFieldEnum = exports.ReportSignatureScalarFieldEnum = exports.MeetingProjectDecisionScalarFieldEnum = exports.MeetingReportScalarFieldEnum = exports.MeetingPresenceScalarFieldEnum = exports.CommitteeMeetingScalarFieldEnum = exports.CommitteeMemberScalarFieldEnum = exports.CommitteeScalarFieldEnum = exports.CampaignStepScalarFieldEnum = exports.CampaignScalarFieldEnum = exports.ActivityScalarFieldEnum = exports.DocumentScalarFieldEnum = exports.ProjectStepProgressScalarFieldEnum = exports.ProjectStatusHistoryScalarFieldEnum = exports.ProjectScalarFieldEnum = exports.PMEScalarFieldEnum = exports.RefreshTokenScalarFieldEnum = exports.RelationLoadStrategy = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
+exports.JsonNullValueFilter = exports.NullsOrder = exports.QueryMode = exports.NullableJsonNullValueInput = exports.SortOrder = exports.GeneralParamsScalarFieldEnum = exports.ProjectCreditScalarFieldEnum = exports.ReportDocumentScalarFieldEnum = exports.ReportSignatureScalarFieldEnum = exports.MeetingProjectDecisionScalarFieldEnum = exports.MeetingReportScalarFieldEnum = exports.MeetingPresenceScalarFieldEnum = exports.CommitteeMeetingScalarFieldEnum = exports.CommitteeMemberScalarFieldEnum = exports.CommitteeScalarFieldEnum = exports.CampaignCriteriaSectorScalarFieldEnum = exports.SectorScalarFieldEnum = exports.CampaignCriteriaScalarFieldEnum = exports.CampaignStepScalarFieldEnum = exports.CampaignScalarFieldEnum = exports.ActivityScalarFieldEnum = exports.DocumentScalarFieldEnum = exports.ProjectStepProgressScalarFieldEnum = exports.ProjectStatusHistoryScalarFieldEnum = exports.PromoterScalarFieldEnum = exports.ProjectScalarFieldEnum = exports.PMEScalarFieldEnum = exports.RefreshTokenScalarFieldEnum = exports.RelationLoadStrategy = exports.UserScalarFieldEnum = exports.TransactionIsolationLevel = exports.ModelName = exports.AnyNull = exports.JsonNull = exports.DbNull = exports.NullTypes = exports.Decimal = void 0;
 const runtime = __importStar(require("@prisma/client/runtime/index-browser"));
 exports.Decimal = runtime.Decimal;
 exports.NullTypes = {
@@ -79,12 +79,16 @@ exports.ModelName = {
     RefreshToken: 'RefreshToken',
     PME: 'PME',
     Project: 'Project',
+    Promoter: 'Promoter',
     ProjectStatusHistory: 'ProjectStatusHistory',
     ProjectStepProgress: 'ProjectStepProgress',
     Document: 'Document',
     Activity: 'Activity',
     Campaign: 'Campaign',
     CampaignStep: 'CampaignStep',
+    CampaignCriteria: 'CampaignCriteria',
+    Sector: 'Sector',
+    CampaignCriteriaSector: 'CampaignCriteriaSector',
     Committee: 'Committee',
     CommitteeMember: 'CommitteeMember',
     CommitteeMeeting: 'CommitteeMeeting',
@@ -93,7 +97,8 @@ exports.ModelName = {
     MeetingProjectDecision: 'MeetingProjectDecision',
     ReportSignature: 'ReportSignature',
     ReportDocument: 'ReportDocument',
-    ProjectCredit: 'ProjectCredit'
+    ProjectCredit: 'ProjectCredit',
+    GeneralParams: 'GeneralParams'
 };
 /*
  * Enums
@@ -115,6 +120,8 @@ exports.UserScalarFieldEnum = {
     lastLoginAt: 'lastLoginAt',
     failedLogins: 'failedLogins',
     isLocked: 'isLocked',
+    resetPasswordToken: 'resetPasswordToken',
+    resetPasswordExpires: 'resetPasswordExpires',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt',
     validatedAt: 'validatedAt',
@@ -149,7 +156,6 @@ exports.PMEScalarFieldEnum = {
     administrative: 'administrative',
     city: 'city',
     address: 'address',
-    userRole: 'userRole',
     activityField: 'activityField',
     ownerId: 'ownerId',
     isActive: 'isActive',
@@ -164,11 +170,26 @@ exports.ProjectScalarFieldEnum = {
     status: 'status',
     requestedAmount: 'requestedAmount',
     fundedAmount: 'fundedAmount',
+    type: 'type',
     fundDisbursementDates: 'fundDisbursementDates',
-    validatedAt: 'validatedAt',
     currentStepOrder: 'currentStepOrder',
     hasCredit: 'hasCredit',
     campaignId: 'campaignId',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.PromoterScalarFieldEnum = {
+    id: 'id',
+    firstName: 'firstName',
+    lastName: 'lastName',
+    gender: 'gender',
+    birthDate: 'birthDate',
+    hasDisability: 'hasDisability',
+    disabilityType: 'disabilityType',
+    maritalStatus: 'maritalStatus',
+    role: 'role',
+    userId: 'userId',
+    pmeId: 'pmeId',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
@@ -219,6 +240,7 @@ exports.CampaignScalarFieldEnum = {
     end_date: 'end_date',
     status: 'status',
     targetProjects: 'targetProjects',
+    type: 'type',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
@@ -229,6 +251,27 @@ exports.CampaignStepScalarFieldEnum = {
     order: 'order',
     setsProjectStatus: 'setsProjectStatus',
     createdAt: 'createdAt'
+};
+exports.CampaignCriteriaScalarFieldEnum = {
+    id: 'id',
+    campaignId: 'campaignId',
+    minAge: 'minAge',
+    maxAge: 'maxAge',
+    hasDisability: 'hasDisability',
+    gender: 'gender',
+    maritalStatus: 'maritalStatus',
+    projectType: 'projectType',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.SectorScalarFieldEnum = {
+    id: 'id',
+    name: 'name',
+    createdAt: 'createdAt'
+};
+exports.CampaignCriteriaSectorScalarFieldEnum = {
+    criteriaId: 'criteriaId',
+    sectorId: 'sectorId'
 };
 exports.CommitteeScalarFieldEnum = {
     id: 'id',
@@ -304,6 +347,19 @@ exports.ProjectCreditScalarFieldEnum = {
     remainingBalance: 'remainingBalance',
     dueDate: 'dueDate',
     projectId: 'projectId',
+    createdAt: 'createdAt',
+    updatedAt: 'updatedAt'
+};
+exports.GeneralParamsScalarFieldEnum = {
+    id: 'id',
+    appName: 'appName',
+    logoUrl: 'logoUrl',
+    logoPublicId: 'logoPublicId',
+    primaryColor: 'primaryColor',
+    contactEmail: 'contactEmail',
+    contactPhone: 'contactPhone',
+    address: 'address',
+    website: 'website',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };
