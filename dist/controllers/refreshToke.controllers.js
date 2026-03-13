@@ -85,6 +85,12 @@ exports.refreshToken = (0, express_async_handler_1.default)(async (req, res) => 
         secure: process.env.NODE_ENV === "production",
         sameSite: "strict"
     });
-    res.json({ accessToken: newAccessToken });
+    // If mobile client — return refresh token in body
+    if (req.headers['x-client-type'] === 'mobile') {
+        res.json({ newAccessToken, newRefreshToken });
+    }
+    else {
+        res.json({ accessToken: newAccessToken });
+    }
 });
 //# sourceMappingURL=refreshToke.controllers.js.map

@@ -173,7 +173,8 @@ export const getUsers = asyncHandler(async (req: AuthRequest, res: Response) => 
         city: true,
         address: true,
         ownerId: true,
-        promoter : true
+        promoter : true,
+        currency : true
       }
     } : false,
       },
@@ -288,11 +289,14 @@ export const updateUser = asyncHandler(async (req: Request, res: Response) => {
  * @access Private
  */
 export const deleteUser = asyncHandler(async (req: AuthRequest, res: Response) => {
+
   const id = req.params.id
   if (!id) {
     res.status(400)
     throw new Error("Missing user id")
   }
+
+  
 
   const userExists = await prisma.user.findUnique({
     where: { id }
@@ -303,11 +307,15 @@ export const deleteUser = asyncHandler(async (req: AuthRequest, res: Response) =
     throw new Error("User not found")
   }
 
-  await prisma.user.delete({
-    where: { id }
-  })
+ await prisma.refreshToken.deleteMany({
+  where: { userId : id }
+})
 
-  res.status(204).send()
+await prisma.user.delete({
+  where: { id}
+})
+
+  res.status(200).json({ message: "User deleted successfully" })
 })
 
 /**

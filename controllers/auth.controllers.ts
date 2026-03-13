@@ -75,7 +75,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
     maxAge: 15 * 60 * 1000    //15m
   })
 
- res.json({msg : 'Connected succesfully'});
+ res.status(200).json({token});
 })
 
 

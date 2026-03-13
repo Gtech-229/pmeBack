@@ -32,7 +32,7 @@ app.use(cookieParser());
 
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? ["https://suivi-mp.com", "https://admin.suivi-mp.com"]
-  : ["http://localhost:3000"];
+  : ["http://localhost:3000", "http://localhost:8081", "http://192.168.1.199:8081"];
 
 app.use(cors({
   origin: function(origin, callback){

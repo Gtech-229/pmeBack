@@ -191,6 +191,7 @@ if (!user.pme && req.body.organisation) {
         description: pmeData.description,
         type: pmeData.type,
         size: pmeData.size,
+        currency : pmeData.currency,
         country: pmeData.country,
         administrative: location.administrative,
         city: location.city,

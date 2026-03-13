@@ -500,7 +500,6 @@ exports.signReport = (0, express_async_handler_1.default)(async (req, res) => {
      * - appliquer le rapport
      * - appliquer toutes les décisions
      */
-    // ── 1. Fetch everything needed BEFORE the transaction ──
     const decisions = await prisma_1.prisma.meetingProjectDecision.findMany({
         where: { reportId: report.id },
     });
@@ -520,10 +519,9 @@ exports.signReport = (0, express_async_handler_1.default)(async (req, res) => {
         const project = projects.find(p => p?.id === decision.projectId);
         if (!project)
             continue;
-        const currentStep = project.stepProgress.find(s => s.status === 'IN_PROGRESS');
+        const currentStep = project.stepProgress.find(s => s.status !== 'APPROVED');
         if (!currentStep)
             continue;
-        console.log("Etape actuelle :", currentStep);
         const isApproved = decision.decision === 'approved';
         const committeeComment = decision.note ?? null;
         let newProjectStatus = null;

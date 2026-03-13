@@ -87,6 +87,8 @@ if (campaign.status !== "OPEN") {
   throw new Error("Cette campagne n'est pas ouverte aux soumissions")
 }
 
+
+
 // Only block multiple submissions for MONO_PROJECT campaigns
 if (campaign.type === "MONO_PROJECT") {
   const hasAlreadyCampaignProject = await prisma.project.findFirst({
@@ -268,7 +270,7 @@ export const getProjects = asyncHandler(
     const { status, date, search,campaignId, step, limit, page} = req.query
      const take = parseInt(limit as string) || 20
     const skip = (parseInt(page as string) - 1 || 0) * take
-
+    
 
 
     //  Build Prisma where clause dynamically
@@ -310,7 +312,9 @@ export const getProjects = asyncHandler(
     if (step && step !== 'all') {
   where.stepProgress = {
     some: {
-      status: 'IN_PROGRESS',
+       status: {
+        in: ['IN_PROGRESS', 'REJECTED'] 
+      },
       campaignStep: {
         order: Number(step),
       },

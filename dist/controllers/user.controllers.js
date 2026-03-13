@@ -147,7 +147,8 @@ exports.getUsers = (0, express_async_handler_1.default)(async (req, res) => {
                         city: true,
                         address: true,
                         ownerId: true,
-                        promoter: true
+                        promoter: true,
+                        currency: true
                     }
                 } : false,
             },
@@ -256,10 +257,13 @@ exports.deleteUser = (0, express_async_handler_1.default)(async (req, res) => {
         res.status(404);
         throw new Error("User not found");
     }
+    await prisma_1.prisma.refreshToken.deleteMany({
+        where: { userId: id }
+    });
     await prisma_1.prisma.user.delete({
         where: { id }
     });
-    res.status(204).send();
+    res.status(200).json({ message: "User deleted successfully" });
 });
 /**
  * @description Add a new admin

@@ -61,7 +61,7 @@ exports.login = (0, express_async_handler_1.default)(async (req, res) => {
         sameSite: "strict",
         maxAge: 15 * 60 * 1000 //15m
     });
-    res.json({ msg: 'Connected succesfully' });
+    res.status(200).json({ token });
 });
 /**
  * @desc    Logout user

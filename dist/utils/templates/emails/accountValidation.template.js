@@ -10,8 +10,8 @@ const accountValidationTemplate = ({ userName, code, expiresAt }) => (0, emailLa
       </p>
 
       <p style="font-size: 18px;">
-        Veuillez utiliser le code ci-dessous  vérifier votre adresse e-mail en vue de commencer
-à collaborer avec les administrateurs de  <strong>PME</strong>.
+        Veuillez utiliser le code ci-dessous pour vérifier votre adresse e-mail en vue de commencer
+à soumettre des projets
       </p>
 
       <p style="font-size: 26px; font-weight: bold; color: #002E3C; letter-spacing: 4px;">

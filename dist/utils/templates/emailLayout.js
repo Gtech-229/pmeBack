@@ -17,7 +17,7 @@ const emailLayout = async (content) => {
               <tr>
                 <td align="center" style="padding-bottom:25px;">
                   <img src="${logoUrl}" alt="${appName}"
-                       style="max-width:160px; height:auto; display:block;" />
+                       style="max-width:120px; width:100%; height:auto; display:block; border-radius:12px;" />
                 </td>
               </tr>
               <!-- Dynamic Content -->

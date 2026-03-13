@@ -659,7 +659,7 @@ if (!allSigned) {
  * - appliquer le rapport
  * - appliquer toutes les décisions
  */
-// ── 1. Fetch everything needed BEFORE the transaction ──
+
 const decisions = await prisma.meetingProjectDecision.findMany({
   where: { reportId: report.id },
 })
@@ -700,10 +700,10 @@ for (const decision of decisions) {
   const project = projects.find(p => p?.id === decision.projectId)
   if (!project) continue
 
-  const currentStep = project.stepProgress.find(s => s.status === 'IN_PROGRESS')
+  const currentStep = project.stepProgress.find(s => s.status !== 'APPROVED')
   if (!currentStep) continue
 
-  console.log("Etape actuelle :", currentStep)
+ 
 
   const isApproved = decision.decision === 'approved'
   const committeeComment = decision.note ?? null

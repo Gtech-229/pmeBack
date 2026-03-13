@@ -180,6 +180,7 @@ exports.PMEScalarFieldEnum = {
     website: 'website',
     logoUrl: 'logoUrl',
     logoId: 'logoId',
+    currency: 'currency',
     country: 'country',
     administrative: 'administrative',
     city: 'city',

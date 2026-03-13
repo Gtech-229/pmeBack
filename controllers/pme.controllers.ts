@@ -75,6 +75,7 @@ export const validateAccount = asyncHandler(
           type: data.type,
           size: data.size,
           country: data.country,
+          currency : data.currency,
           administrative: location.administrative,
           city: location.city,
           activityField: data.activityField

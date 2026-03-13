@@ -40,7 +40,8 @@ export const verifyAccessToken = (
   next: NextFunction
 ) => {
   const token = req.cookies?.jwt
-  
+ 
+
  
 
   if(!token){
@@ -55,7 +56,7 @@ export const verifyAccessToken = (
       id: decoded.id,
       role: decoded.role
     }
-
+   
     next()
   } catch (error) {
     return res.status(401).json({ message: "Invalid or expired access token" })

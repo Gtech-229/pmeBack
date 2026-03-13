@@ -1,4 +1,4 @@
-import { Router } from "express"
+import express from "express"
 import {
   createUser,
   deleteUser,
@@ -13,18 +13,19 @@ import { requireRole } from "../middlewares/rbac"
 import { requireOwnershipOrRole } from "../middlewares/ownership"
 import { createRateLimiter } from "../middlewares/ratelimit"
 
-const router = Router()
+const router = express.Router({ mergeParams: true })
 // Every route require the authentification
-
+router
+  .route("/:id")
+  .delete(requireAuth,requireRole('SUPER_ADMIN','ADMIN'),deleteUser)
+  .get(requireOwnershipOrRole(Role.ADMIN, Role.SUPER_ADMIN),getUserById)
+  .put(requireAuth,requireOwnershipOrRole(Role.ADMIN, Role.SUPER_ADMIN),updateUser)
+  
 
 router.route('/admin')
 .post(requireAuth, requireRole('SUPER_ADMIN'), createAdmin)
 
-router
-  .route("/:id")
-  .get(requireOwnershipOrRole(Role.ADMIN, Role.SUPER_ADMIN),getUserById)
-  .put(requireAuth,requireOwnershipOrRole(Role.ADMIN, Role.SUPER_ADMIN),updateUser)
-  .delete(requireRole( Role.SUPER_ADMIN),deleteUser)
+
 
 router
   .route("/")

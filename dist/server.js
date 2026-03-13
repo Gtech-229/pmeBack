@@ -33,7 +33,7 @@ app.use(express_1.default.urlencoded({ extended: false }));
 app.use((0, cookie_parser_1.default)());
 const allowedOrigins = process.env.NODE_ENV === 'production'
     ? ["https://suivi-mp.com", "https://admin.suivi-mp.com"]
-    : ["http://localhost:3000"];
+    : ["http://localhost:3000", "http://localhost:8081", "http://192.168.1.199:8081"];
 app.use((0, cors_1.default)({
     origin: function (origin, callback) {
         // autoriser les requêtes sans origin (ex: Postman)

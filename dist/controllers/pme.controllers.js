@@ -63,6 +63,7 @@ exports.validateAccount = (0, express_async_handler_1.default)(async (req, res) 
                 type: data.type,
                 size: data.size,
                 country: data.country,
+                currency: data.currency,
                 administrative: location.administrative,
                 city: location.city,
                 activityField: data.activityField

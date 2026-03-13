@@ -103,7 +103,16 @@ export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Respon
     sameSite: "strict"
   })
 
+  // If mobile client — return refresh token in body
+if (req.headers['x-client-type'] === 'mobile') {
+  res.json({ newAccessToken, newRefreshToken }); 
+} else {
+
+
   res.json({ accessToken: newAccessToken })
+}
+
+ 
 })
 
 

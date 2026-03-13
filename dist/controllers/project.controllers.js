@@ -220,7 +220,9 @@ exports.getProjects = (0, express_async_handler_1.default)(async (req, res) => {
     if (step && step !== 'all') {
         where.stepProgress = {
             some: {
-                status: 'IN_PROGRESS',
+                status: {
+                    in: ['IN_PROGRESS', 'REJECTED']
+                },
                 campaignStep: {
                     order: Number(step),
                 },

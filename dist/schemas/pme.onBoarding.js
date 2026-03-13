@@ -49,6 +49,7 @@ exports.step2Schema = zod_1.z.object({
             ? "Le pays est requis"
             : "Valeur invalide",
     }).min(2, "Nom du pays trop court"),
+    currency: zod_1.z.string(),
     administrative: zod_1.z.record(zod_1.z.string(), zod_1.z.string().min(2, "Champ requis")),
     city: zod_1.z.string().optional(),
     address: zod_1.z.string({

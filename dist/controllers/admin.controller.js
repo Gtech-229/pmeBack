@@ -162,6 +162,7 @@ exports.adminCreateProject = (0, express_async_handler_1.default)(async (req, re
                     description: pmeData.description,
                     type: pmeData.type,
                     size: pmeData.size,
+                    currency: pmeData.currency,
                     country: pmeData.country,
                     administrative: location.administrative,
                     city: location.city,

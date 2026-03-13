@@ -72,6 +72,8 @@ export const step2Schema  = z.object({
         : "Valeur invalide",
   }).min(2, "Nom du pays trop court"),
 
+  currency : z.string(),
+
   administrative: z.record(
       z.string(),
       z.string().min(2, "Champ requis")
