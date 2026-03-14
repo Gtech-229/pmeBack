@@ -70,6 +70,7 @@ export const createProjectBodySchema = z.object({
     }),
   title: z.string().min(3),
   description: z.string().min(20),
+  sectorId : z.string().uuid().optional(),
 
   requestedAmount: z.coerce
     .number()

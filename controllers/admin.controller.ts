@@ -195,7 +195,6 @@ if (!user.pme && req.body.organisation) {
         country: pmeData.country,
         administrative: location.administrative,
         city: location.city,
-        activityField: pmeData.activityField,
         isActive: true,
       }
     })
@@ -264,7 +263,7 @@ if (!parsedBody.success) {
   throw parsedBody.error
 }
 
-const { title, description, requestedAmount, hasCredit, campaignId, credits, type } = parsedBody.data
+const { title, description, requestedAmount, hasCredit, campaignId, credits, type, sectorId } = parsedBody.data
 
 
  
@@ -331,7 +330,8 @@ if (campaign.type === "MONO_PROJECT") {
         campaignId,
         status: "pending",
         currentStepOrder: 1,
-       type
+       type,
+       sectorId : sectorId ?? null
       }
     })
 

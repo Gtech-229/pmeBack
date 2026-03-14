@@ -175,7 +175,8 @@ export const getMe = asyncHandler(
                     campaignStep : true
                   }
                 },
-                campaign : {include : {steps : true}}
+                campaign : {include : {steps : true}},
+                sector : true
               }
             },
             promoter : true

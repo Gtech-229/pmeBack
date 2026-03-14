@@ -67,9 +67,11 @@ export const createProject = asyncHandler(
       hasCredit,
       campaignId,
       credits ,
-      type
+      type,
+      sectorId 
     } = parsedBody.data
 
+    
     
     /* ---------------- CAMPAIGN CHECK ---------------- */
 const campaign = await prisma.campaign.findUnique({
@@ -141,7 +143,8 @@ if (campaign.type === "MONO_PROJECT") {
       campaignId,
       status: "pending",
       currentStepOrder: 1,
-      type 
+      type ,
+      sectorId : sectorId ?? null
     },
 
     include : {
@@ -345,7 +348,7 @@ export const getProjects = asyncHandler(
               campaignStep : true
             }
           },
-
+           sector : true,
           campaign : true
         },
       }),
@@ -392,7 +395,10 @@ export const getProject = asyncHandler( async (req: Request, res: Response)=> {
               owner : true,
               projects : {
                 include : {
-                  campaign : true
+                  campaign : true,
+                  sector : true,
+                  statusHistory : true,
+                  stepProgress : {include : {stepDocuments : true}}
                 }
               },
               promoter : {include : {user : true}}
@@ -401,6 +407,7 @@ export const getProject = asyncHandler( async (req: Request, res: Response)=> {
             }
           },
           campaign : true,
+          sector : true,
           stepProgress : {
             include : {
               campaignStep :{

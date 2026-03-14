@@ -164,7 +164,6 @@ export const getUsers = asyncHandler(async (req: AuthRequest, res: Response) => 
         type: true,
         size: true,
         description: true,
-        activityField: true,
         email: true,
         phone: true,
         website: true,

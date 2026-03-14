@@ -98,7 +98,7 @@ model PME {
   address        String
 
  
-  activityField   String
+  
 
   /* --- Relations --- */
   projects    Project[]
@@ -138,6 +138,8 @@ model Project {
  meetingProject      MeetingProjectDecision[]
   campaignId    String
   campaign      Campaign @relation(fields: [campaignId], references: [id] ,onDelete: Cascade)
+   sectorId    String?
+  sector      Sector?   @relation(fields: [sectorId], references: [id])
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
   @@index([status])
@@ -324,6 +326,7 @@ model CampaignCriteria {
 model Sector {
   id        String   @id @default(uuid())
   name      String   @unique
+   projects  Project[]  
   createdAt DateTime @default(now())
   criteria  CampaignCriteriaSector[]
 }

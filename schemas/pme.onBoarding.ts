@@ -26,11 +26,7 @@ export const step1Schema = z.object({
     .string({error : (iss)=> iss.input === undefined ? "Une description devotre entreprise est requise" : "Invalid input"})
     .min(30, {error : "Trop court"}),
 
-    activityField : z
- .string()
- .min(4,{
-  error : (iss) => iss.input === undefined ? "Saisissew votre secteur d'activite" : "Entree invalide"
- })
+  
 })
 
 

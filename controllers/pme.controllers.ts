@@ -78,7 +78,7 @@ export const validateAccount = asyncHandler(
           currency : data.currency,
           administrative: location.administrative,
           city: location.city,
-          activityField: data.activityField
+        
           
         }
       })
@@ -295,8 +295,8 @@ export const getPmes = asyncHandler(async (req: AuthRequest, res: Response) => {
           OR: [
             { name: { contains: search as string, mode: "insensitive" } },
             { email: { contains: search as string, mode: "insensitive" } },
-            { city: { contains: search as string, mode: "insensitive" } },
-            { activityField: { contains: search as string, mode: "insensitive" } },
+            { city: { contains: search as string, mode: "insensitive" } }
+           
           ],
         }
       : {}),
