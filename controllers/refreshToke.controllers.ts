@@ -98,10 +98,12 @@ export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Respon
 
   //  Mettre le refresh token en cookie
   res.cookie("refreshToken", newRefreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict"
-  })
+  httpOnly: true,
+  secure: true,
+  sameSite: "lax",
+  domain: ".suivi-mp.com",
+  maxAge: 7 * 24 * 60 * 60 * 1000
+})
 
   // If mobile client — return refresh token in body
 if (req.headers['x-client-type'] === 'mobile') {

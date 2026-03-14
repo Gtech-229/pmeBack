@@ -78,20 +78,21 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
 
 
    // Set refresh token in httpOnly cookie
-  res.cookie("refreshToken", refreshTkn, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: "strict",
-    maxAge: 7 * 24 * 60 * 60 * 1000
-  });
+ res.cookie("refreshToken", refreshTkn, {
+  httpOnly: true,
+  secure: true,
+  sameSite: "lax",
+  domain: ".suivi-mp.com",
+  maxAge: 7 * 24 * 60 * 60 * 1000
+})
 
-  
-  res.cookie("jwt", token, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: 15 * 60 * 1000    //15m
-  })
+res.cookie("jwt", token, {
+  httpOnly: true,
+  secure: true,
+  sameSite: "lax",
+  domain: ".suivi-mp.com",
+  maxAge: 15 * 60 * 1000
+})
 
 
 
