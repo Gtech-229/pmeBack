@@ -12,6 +12,7 @@ import { comparePassword, hashPassword } from "../utils/password"
  * @access Private 
  * **/ 
 export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => {
+  const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined
 
   const userId = req.userId
   const refreshTokenPlain = req.cookies.refreshToken
@@ -101,7 +102,7 @@ export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Respon
   httpOnly: true,
   secure: true,
   sameSite: "lax",
-  domain: ".suivi-mp.com",
+ ...(cookieDomain && { domain: cookieDomain }),
   maxAge: 7 * 24 * 60 * 60 * 1000
 })
 

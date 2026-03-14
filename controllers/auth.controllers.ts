@@ -18,6 +18,7 @@ import { accountValidationTemplate } from "../utils/templates/emails/accountVali
  * @access  Public
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
+   const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined
   const parsed = loginSchema.parse(req.body)
 
   const { email, password } = parsed
@@ -64,7 +65,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
   httpOnly: true,
   secure: true,
   sameSite: "lax",
-  domain: ".suivi-mp.com",
+ ...(cookieDomain && { domain: cookieDomain }),
   maxAge: 7 * 24 * 60 * 60 * 1000
 })
 
@@ -72,7 +73,7 @@ res.cookie("jwt", token, {
   httpOnly: true,
   secure: true,
   sameSite: "lax",
-  domain: ".suivi-mp.com",
+ ...(cookieDomain && { domain: cookieDomain }),
   maxAge: 15 * 60 * 1000
 })
 
