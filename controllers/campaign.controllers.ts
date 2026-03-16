@@ -625,9 +625,11 @@ export const deleteCampaign = asyncHandler(async (req: AuthRequest, res: Respons
   }
 
   if (campaign.projects.length > 0) {
-    res.status(400)
-    throw new Error("Impossible de supprimer une campagne contenant des projets")
-  }
+  res.status(400)
+  throw new Error(
+    `Impossible de supprimer cette campagne : elle contient ${campaign.projects.length} projet(s). Veuillez les supprimer ou les transférer avant de continuer.`
+  )
+}
 
   await prisma.campaign.delete({ where: { id } })
 
