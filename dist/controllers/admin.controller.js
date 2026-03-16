@@ -166,7 +166,6 @@ exports.adminCreateProject = (0, express_async_handler_1.default)(async (req, re
                     country: pmeData.country,
                     administrative: location.administrative,
                     city: location.city,
-                    activityField: pmeData.activityField,
                     isActive: true,
                 }
             });
@@ -226,7 +225,7 @@ exports.adminCreateProject = (0, express_async_handler_1.default)(async (req, re
         res.status(400);
         throw parsedBody.error;
     }
-    const { title, description, requestedAmount, hasCredit, campaignId, credits, type } = parsedBody.data;
+    const { title, description, requestedAmount, hasCredit, campaignId, credits, type, sectorId } = parsedBody.data;
     /* ---------------- CAMPAIGN CHECK ---------------- */
     const campaign = await prisma_1.prisma.campaign.findUnique({
         where: { id: campaignId },
@@ -278,7 +277,8 @@ exports.adminCreateProject = (0, express_async_handler_1.default)(async (req, re
                 campaignId,
                 status: "pending",
                 currentStepOrder: 1,
-                type
+                type,
+                sectorId: sectorId ?? null
             }
         });
         await tx.projectStatusHistory.create({

@@ -45,7 +45,7 @@ exports.createProject = (0, express_async_handler_1.default)(async (req, res) =>
         res.status(400);
         throw parsedBody.error;
     }
-    const { title, description, requestedAmount, hasCredit, campaignId, credits, type } = parsedBody.data;
+    const { title, description, requestedAmount, hasCredit, campaignId, credits, type, sectorId } = parsedBody.data;
     /* ---------------- CAMPAIGN CHECK ---------------- */
     const campaign = await prisma_1.prisma.campaign.findUnique({
         where: { id: campaignId },
@@ -96,7 +96,8 @@ exports.createProject = (0, express_async_handler_1.default)(async (req, res) =>
                 campaignId,
                 status: "pending",
                 currentStepOrder: 1,
-                type
+                type,
+                sectorId: sectorId ?? null
             },
             include: {
                 campaign: true,
@@ -175,7 +176,7 @@ exports.createProject = (0, express_async_handler_1.default)(async (req, res) =>
         }
     });
     /* ---------------- RESPONSE ---------------- */
-    res.status(201).json(project);
+    res.status(201).json(project.project);
 });
 /**
  * @description Get projects (paginated + filtered)
@@ -248,6 +249,7 @@ exports.getProjects = (0, express_async_handler_1.default)(async (req, res) => {
                         campaignStep: true
                     }
                 },
+                sector: true,
                 campaign: true
             },
         }),
@@ -282,13 +284,17 @@ exports.getProject = (0, express_async_handler_1.default)(async (req, res) => {
                     owner: true,
                     projects: {
                         include: {
-                            campaign: true
+                            campaign: true,
+                            sector: true,
+                            statusHistory: true,
+                            stepProgress: { include: { stepDocuments: true } }
                         }
                     },
                     promoter: { include: { user: true } }
                 }
             },
             campaign: true,
+            sector: true,
             stepProgress: {
                 include: {
                     campaignStep: {
@@ -366,129 +372,55 @@ exports.updateProject = (0, express_async_handler_1.default)(async (req, res) =>
         res.status(401);
         throw new Error('Not authentificated');
     }
-    const user = req.user?.id;
     const projectId = req.params.id;
     if (!projectId) {
         res.status(400);
-        throw new Error("Please , specify a project id");
+        throw new Error("Please specify a project id");
     }
-    console.log("Received data :", req.body);
-    //     // Zod validation
     const parsedData = project_schema_2.updateProjectSchema.safeParse(req.body);
     if (!parsedData.success) {
         res.status(400);
         throw parsedData.error;
     }
-    const { title, description, requestedAmount, existingDocuments, removedDocuments, campaignId, newCredits, existingCredits, removedCredits, hasCredit, type } = parsedData.data;
+    const { title, description, requestedAmount, campaignId, hasCredit, type, credits, keepDocuments } = parsedData.data;
     const project = await prisma_1.prisma.project.findUnique({
         where: { id: projectId },
         include: {
             documents: true,
             stepProgress: true,
-            credits: true
+            credits: true,
         }
     });
     if (!project) {
         res.status(404);
         throw new Error("Project not found");
     }
-    const pme = await prisma_1.prisma.pME.findUnique({
-        where: { id: project.pmeId }
-    });
+    const pme = await prisma_1.prisma.pME.findUnique({ where: { id: project.pmeId } });
     if (!pme || pme.ownerId !== req.user.id) {
         res.status(403);
         throw new Error('Not allowed to update this project');
     }
-    const updated = await prisma_1.prisma.project.update({
-        where: { id: projectId },
-        data: {
-            title,
-            description,
-            requestedAmount,
-            campaignId,
-            hasCredit,
-            type
-        },
-        include: {
-            campaign: { include: { steps: true } },
-            credits: true,
-            statusHistory: true,
-            stepProgress: { include: { stepDocuments: true } }
-        }
+    // ── Credits diff ──
+    const incoming = credits ?? [];
+    const incomingIds = incoming.filter(c => c.id).map(c => c.id);
+    await prisma_1.prisma.projectCredit.deleteMany({
+        where: { projectId, id: { notIn: incomingIds } }
     });
-    if (existingDocuments?.length) {
-        for (const doc of existingDocuments) {
-            await prisma_1.prisma.document.update({
-                where: { id: doc.id },
-                data: { title: doc.title }
-            });
-        }
-    }
-    if (removedDocuments?.length) {
-        const docsToDelete = project.documents.filter(d => removedDocuments.includes(d.id));
-        for (const doc of docsToDelete) {
-            await (0, RemoveFromCloudinary_1.removeFromCloudinary)(doc.publicId);
-            await prisma_1.prisma.document.delete({ where: { id: doc.id } });
-        }
-    }
-    // ---------------------------
-    // Upload new documents (FIXED)
-    // ---------------------------
-    const files = req.files;
-    if (files?.length) {
-        for (const file of files) {
-            /**
-             * fieldname example:
-             * newDocuments[2][file]
-             */
-            const match = file.fieldname.match(/newDocuments\[(\d+)\]\[file\]/);
-            if (!match)
-                continue;
-            const index = Number(match[1]);
-            const meta = req.body.newDocuments?.[index];
-            if (!meta?.title) {
-                throw new Error(`Missing title for new document at index ${index}`);
+    for (const c of incoming.filter(c => c.id)) {
+        await prisma_1.prisma.projectCredit.update({
+            where: { id: c.id },
+            data: {
+                borrower: c.borrower,
+                amount: c.amount,
+                interestRate: c.interestRate,
+                monthlyPayment: c.monthlyPayment,
+                remainingBalance: c.remainingBalance,
+                dueDate: c.dueDate,
             }
-            const upload = await (0, UploadToCloudinary_1.uploadToCloudinary)(file, `projects/${project.id}`);
-            const currentStep = project.stepProgress.find((step) => step.status === "IN_PROGRESS");
-            if (!currentStep) {
-                throw new Error("Aucune étape en cours trouvée pour ce projet");
-            }
-            await prisma_1.prisma.document.create({
-                data: {
-                    title: meta.title,
-                    fileUrl: upload.url,
-                    publicId: upload.publicId,
-                    mimeType: file.mimetype,
-                    size: file.size,
-                    projectId: project.id,
-                    projectStepId: currentStep.id
-                }
-            });
-        }
-    }
-    // Credits
-    if (removedCredits?.length) {
-        await prisma_1.prisma.projectCredit.deleteMany({
-            where: { id: { in: removedCredits } }
         });
     }
-    if (existingCredits?.length) {
-        for (const credit of existingCredits) {
-            await prisma_1.prisma.projectCredit.update({
-                where: { id: credit.id },
-                data: {
-                    borrower: credit.borrower,
-                    amount: credit.amount,
-                    interestRate: credit.interestRate,
-                    monthlyPayment: credit.monthlyPayment,
-                    remainingBalance: credit.remainingBalance,
-                    dueDate: credit.dueDate
-                }
-            });
-        }
-    }
-    if (newCredits?.length) {
+    const newCredits = incoming.filter(c => !c.id);
+    if (newCredits.length) {
         await prisma_1.prisma.projectCredit.createMany({
             data: newCredits.map(c => ({
                 borrower: c.borrower,
@@ -497,10 +429,72 @@ exports.updateProject = (0, express_async_handler_1.default)(async (req, res) =>
                 monthlyPayment: c.monthlyPayment,
                 remainingBalance: c.remainingBalance,
                 dueDate: c.dueDate,
-                projectId: projectId
+                projectId,
             }))
         });
     }
+    // ── Documents diff ──
+    const toKeep = keepDocuments ?? [];
+    const currentStep = project.stepProgress.find(s => s.status === "IN_PROGRESS");
+    // Only diff documents from the current step
+    const currentStepDocs = project.documents.filter(d => currentStep ? d.projectStepId === currentStep.id : false);
+    const docsToDelete = currentStepDocs.filter(d => !toKeep.includes(d.id));
+    for (const doc of docsToDelete) {
+        await (0, RemoveFromCloudinary_1.removeFromCloudinary)(doc.publicId);
+        await prisma_1.prisma.document.delete({ where: { id: doc.id } });
+    }
+    // ── New document uploads ──
+    const files = req.files;
+    if (files?.length) {
+        if (!currentStep) {
+            res.status(400);
+            throw new Error("Aucune étape en cours trouvée pour ce projet");
+        }
+        for (const file of files) {
+            const match = file.fieldname.match(/newDocuments\[(\d+)\]\[file\]/);
+            if (!match)
+                continue;
+            const index = Number(match[1]);
+            const meta = req.body.newDocuments?.[index];
+            if (!meta?.title)
+                throw new Error(`Missing title for document at index ${index}`);
+            const upload = await (0, UploadToCloudinary_1.uploadToCloudinary)(file, `projects/${project.id}`);
+            await prisma_1.prisma.document.create({
+                data: {
+                    title: meta.title,
+                    fileUrl: upload.url,
+                    publicId: upload.publicId,
+                    mimeType: file.mimetype,
+                    size: file.size,
+                    projectId: project.id,
+                    projectStepId: currentStep.id,
+                }
+            });
+        }
+    }
+    // ── Update project ──
+    const updated = await prisma_1.prisma.project.update({
+        where: { id: projectId },
+        data: { title, description, requestedAmount, campaignId, hasCredit, type },
+        include: {
+            campaign: { include: { steps: true } },
+            credits: true,
+            statusHistory: true,
+            stepProgress: {
+                include: {
+                    stepDocuments: true,
+                    campaignStep: true,
+                }
+            },
+            sector: true,
+            pme: {
+                include: {
+                    owner: true,
+                    promoter: { include: { user: true } }
+                }
+            }
+        }
+    });
     res.status(200).json(updated);
 });
 //# sourceMappingURL=project.controllers.js.map

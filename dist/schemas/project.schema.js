@@ -24,6 +24,7 @@ exports.createSubStepSchema = zod_1.z.object({
 // Project DTO & Zod Schema
 // ==========================
 exports.creditSchema = zod_1.z.object({
+    id: zod_1.z.string().uuid().optional(),
     borrower: zod_1.z
         .string()
         .min(1, "nom dde l'emprunteur requis"),
@@ -52,6 +53,7 @@ exports.createProjectBodySchema = zod_1.z.object({
     }),
     title: zod_1.z.string().min(3),
     description: zod_1.z.string().min(20),
+    sectorId: zod_1.z.string().uuid().optional(),
     requestedAmount: zod_1.z.coerce
         .number()
         .min(0, "Montant demandé invalide"),
@@ -81,29 +83,22 @@ exports.updateProjectSchema = zod_1.z.object({
     // ----------------------
     // DOCUMENTS
     // ----------------------
-    existingDocuments: zod_1.z.array(zod_1.z.object({
-        id: zod_1.z.string().uuid(),
-        title: zod_1.z.string().min(2)
-    })).optional(),
-    removedDocuments: zod_1.z.array(zod_1.z.string().uuid()).optional(),
+    keepDocuments: zod_1.z.preprocess(val => typeof val === 'string' ? JSON.parse(val) : val, zod_1.z.array(zod_1.z.string().uuid())).optional(),
     // ----------------------
     // CREDITS
     // ----------------------
-    existingCredits: zod_1.z.array(zod_1.z.object({
-        id: zod_1.z.string().uuid(),
+    credits: zod_1.z.preprocess(val => typeof val === 'string' ? JSON.parse(val) : val, zod_1.z.array(zod_1.z.object({
+        id: zod_1.z.string().uuid().optional(),
         borrower: zod_1.z.string(),
         amount: zod_1.z.coerce.number(),
         interestRate: zod_1.z.coerce.number(),
         monthlyPayment: zod_1.z.coerce.number(),
         remainingBalance: zod_1.z.coerce.number(),
-        dueDate: zod_1.z.coerce.date()
-    })).optional(),
-    newCredits: zod_1.z.array(exports.creditSchema).optional(),
-    removedCredits: zod_1.z.array(zod_1.z.string().uuid()).optional(),
+        dueDate: zod_1.z.coerce.date(),
+    }))).optional(),
     campaignId: zod_1.z.string().uuid()
 }).superRefine((data, ctx) => {
-    const hasAnyCredit = (data.newCredits && data.newCredits.length > 0) ||
-        (data.existingCredits && data.existingCredits.length > 0);
+    const hasAnyCredit = (data.credits && data.credits.length > 0);
     if (data.hasCredit && !hasAnyCredit) {
         ctx.addIssue({
             code: zod_1.z.ZodIssueCode.custom,

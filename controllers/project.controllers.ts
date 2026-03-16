@@ -170,6 +170,7 @@ if (campaign.type === "MONO_PROJECT") {
         projectId: createdProject.id,
         campaignStepId: step.id,
         status: step.order === 1 ? "IN_PROGRESS" : "PENDING"
+        
       }
     })
 
@@ -252,7 +253,7 @@ if (campaign.type === "MONO_PROJECT") {
 
     /* ---------------- RESPONSE ---------------- */
 
-    res.status(201).json(project)
+    res.status(201).json(project.project)
   }
 )
 
@@ -516,197 +517,72 @@ export const getMyProjects = asyncHandler (
  * @access Private
  * **/ 
 
-export const updateProject = asyncHandler(async(req : AuthRequest, res: Response)=>{
-    if(!req.user?.id){
-      res.status(401)
-      throw new Error('Not authentificated')
-    }
+export const updateProject = asyncHandler(async (req: AuthRequest, res: Response) => {
+  if (!req.user?.id) {
+    res.status(401)
+    throw new Error('Not authentificated')
+  }
 
-    const user = req.user?.id
-
-    const projectId = req.params.id
-
-    if(!projectId){
-      res.status(400)
-      throw new Error("Please , specify a project id")
-    }
+  const projectId = req.params.id
+  if (!projectId) {
+    res.status(400)
+    throw new Error("Please specify a project id")
+  }
 
 
-    console.log("Received data :", req.body)
 
-//     // Zod validation
-   const parsedData = updateProjectSchema.safeParse(req.body)
-   if(!parsedData.success){
+  const parsedData = updateProjectSchema.safeParse(req.body)
+  if (!parsedData.success) {
     res.status(400)
     throw parsedData.error
-   }
+  }
 
-   const {
-    title,
-    description,
-    requestedAmount,
-    existingDocuments,
-    removedDocuments,
-    campaignId,
-    newCredits,
-    existingCredits,
-    removedCredits,
-    hasCredit,
-    type
-  } = parsedData.data
+  const { title, description, requestedAmount, campaignId, hasCredit, type, credits, keepDocuments } = parsedData.data
 
-  
-
-
-    const project = await prisma.project.findUnique({
-      where : {id : projectId},
-      include : {
-        documents : true ,
-         stepProgress : true,
-         credits : true
-        }
-    })
-
-    if(!project){
-      res.status(404)
-      throw new Error("Project not found")
-
+  const project = await prisma.project.findUnique({
+    where: { id: projectId },
+    include: {
+      documents: true,
+      stepProgress: true,
+      credits: true,
     }
-
-     const pme = await prisma.pME.findUnique({
-    where: { id: project.pmeId }
   })
 
+  if (!project) {
+    res.status(404)
+    throw new Error("Project not found")
+  }
+
+  const pme = await prisma.pME.findUnique({ where: { id: project.pmeId } })
   if (!pme || pme.ownerId !== req.user.id) {
     res.status(403)
     throw new Error('Not allowed to update this project')
   }
- const updated= await prisma.project.update({
-    where: { id: projectId },
-    data: {
-      title,
-      description,
-      requestedAmount,
-      campaignId,
-      hasCredit ,
-      type
-    },
-    include : {
-      campaign : {include : {steps : true}},
-      credits : true,
-      statusHistory : true,
-      stepProgress : {include : {stepDocuments : true}}
-    }
+
+  // ── Credits diff ──
+  const incoming = credits ?? []
+  const incomingIds = incoming.filter(c => c.id).map(c => c.id as string)
+
+  await prisma.projectCredit.deleteMany({
+    where: { projectId, id: { notIn: incomingIds } }
   })
-
-   if (existingDocuments?.length) {
-    for (const doc of existingDocuments) {
-      await prisma.document.update({
-        where: { id: doc.id },
-        data: { title: doc.title }
-      })
-    }
-  }
-
-   if (removedDocuments?.length) {
-    const docsToDelete = project.documents.filter(d =>
-      removedDocuments.includes(d.id)
-    )
-
-    for (const doc of docsToDelete) {
-     await removeFromCloudinary(doc.publicId)
-      await prisma.document.delete({ where: { id: doc.id } })
-    }
-  }
-
   
-
-
-// ---------------------------
-// Upload new documents (FIXED)
-// ---------------------------
-const files = req.files as Express.Multer.File[] | undefined
-
-if (files?.length) {
-  for (const file of files) {
-    /**
-     * fieldname example:
-     * newDocuments[2][file]
-     */
-    const match = file.fieldname.match(/newDocuments\[(\d+)\]\[file\]/)
-
-    if (!match) continue
-
-    const index = Number(match[1])
-    const meta = req.body.newDocuments?.[index]
-
-    if (!meta?.title) {
-      throw new Error(`Missing title for new document at index ${index}`)
-    }
-
-    const upload = await uploadToCloudinary(
-      file,
-      `projects/${project.id}`
-    )
-
-      const currentStep = project.stepProgress.find(
-  (step) => step.status === "IN_PROGRESS"
-);
-
-if (!currentStep) {
-  throw new Error("Aucune étape en cours trouvée pour ce projet");
-}
-
-  
-
-    await prisma.document.create({
+  for (const c of incoming.filter(c => c.id)) {
+    await prisma.projectCredit.update({
+      where: { id: c.id! },
       data: {
-        title: meta.title,
-        fileUrl: upload.url,
-        publicId: upload.publicId,
-        mimeType: file.mimetype,
-        size: file.size,
-        projectId: project.id,
-        projectStepId : currentStep.id
+        borrower: c.borrower,
+        amount: c.amount,
+        interestRate: c.interestRate,
+        monthlyPayment: c.monthlyPayment,
+        remainingBalance: c.remainingBalance,
+        dueDate: c.dueDate,
       }
     })
-
-    
-
-
-  }
-}
-
-
-// Credits
-
-     if (removedCredits?.length) {
-    await prisma.projectCredit.deleteMany({
-      where: { id: { in: removedCredits } }
-    })
   }
 
-
-  if (existingCredits?.length) {
-    for (const credit of existingCredits) {
-      await prisma.projectCredit.update({
-        where: { id: credit.id },
-        data: {
-          borrower: credit.borrower,
-          amount: credit.amount,
-          interestRate: credit.interestRate,
-          monthlyPayment: credit.monthlyPayment,
-          remainingBalance: credit.remainingBalance,
-          dueDate: credit.dueDate
-        }
-      })
-    }
-  }
-
-
-  
-
-    if (newCredits?.length) {
+  const newCredits = incoming.filter(c => !c.id)
+  if (newCredits.length) {
     await prisma.projectCredit.createMany({
       data: newCredits.map(c => ({
         borrower: c.borrower,
@@ -715,14 +591,82 @@ if (!currentStep) {
         monthlyPayment: c.monthlyPayment,
         remainingBalance: c.remainingBalance,
         dueDate: c.dueDate,
-        projectId: projectId 
+        projectId,
       }))
     })
   }
 
-   res.status(200).json(updated)
+  // ── Documents diff ──
+  const toKeep = keepDocuments ?? []
+  const currentStep = project.stepProgress.find(s => s.status === "IN_PROGRESS")
 
+  // Only diff documents from the current step
+  const currentStepDocs = project.documents.filter(d =>
+    currentStep ? d.projectStepId === currentStep.id : false
+  )
 
+  const docsToDelete = currentStepDocs.filter(d => !toKeep.includes(d.id))
+  for (const doc of docsToDelete) {
+    await removeFromCloudinary(doc.publicId)
+    await prisma.document.delete({ where: { id: doc.id } })
+  }
+
+  // ── New document uploads ──
+  const files = req.files as Express.Multer.File[] | undefined
+  if (files?.length) {
+    if (!currentStep) {
+      res.status(400)
+      throw new Error("Aucune étape en cours trouvée pour ce projet")
+    }
+
+    for (const file of files) {
+      const match = file.fieldname.match(/newDocuments\[(\d+)\]\[file\]/)
+      if (!match) continue
+
+      const index = Number(match[1])
+      const meta = req.body.newDocuments?.[index]
+      if (!meta?.title) throw new Error(`Missing title for document at index ${index}`)
+
+      const upload = await uploadToCloudinary(file, `projects/${project.id}`)
+      await prisma.document.create({
+        data: {
+          title: meta.title,
+          fileUrl: upload.url,
+          publicId: upload.publicId,
+          mimeType: file.mimetype,
+          size: file.size,
+          projectId: project.id,
+          projectStepId: currentStep.id,
+        }
+      })
+    }
+  }
+
+  // ── Update project ──
+  const updated = await prisma.project.update({
+    where: { id: projectId },
+    data: { title, description, requestedAmount, campaignId, hasCredit, type },
+    include: {
+      campaign: { include: { steps: true } },
+      credits: true,
+      statusHistory: true,
+      stepProgress: {
+        include: {
+          stepDocuments: true,
+          campaignStep: true,
+        }
+      },
+      sector: true,
+      pme: {
+        include: {
+          owner: true,
+          promoter: { include: { user: true } }
+        }
+      }
+    }
+  })
+
+  res.status(200).json(updated)
 })
 
 

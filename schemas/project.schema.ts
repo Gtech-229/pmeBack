@@ -29,6 +29,7 @@ export type SubStepDTO = z.infer<typeof createSubStepSchema>;
 // ==========================
 
 export const creditSchema = z.object({
+  id : z.string().uuid().optional(),
   borrower : z
   .string()
   .min(1, "nom dde l'emprunteur requis"),
@@ -114,46 +115,42 @@ export const updateProjectSchema = z.object({
   // ----------------------
   // DOCUMENTS
   // ----------------------
-  existingDocuments: z.array(
-    z.object({
-      id: z.string().uuid(),
-      title: z.string().min(2)
-    })
-  ).optional(),
+keepDocuments: z.preprocess(
+  val => typeof val === 'string' ? JSON.parse(val) : val,
+  z.array(z.string().uuid())
+).optional(),
 
-  removedDocuments: z.array(z.string().uuid()).optional(),
+ 
 
   // ----------------------
   // CREDITS
   // ----------------------
 
   
-  existingCredits: z.array(
-    z.object({
-      id: z.string().uuid(),
+ 
 
-      
-      borrower: z.string(),
-      amount: z.coerce.number(),
-      interestRate: z.coerce.number(),
-      monthlyPayment: z.coerce.number(),
-      remainingBalance: z.coerce.number(),
-      dueDate: z.coerce.date()
-    })
-  ).optional(),
+  credits: z.preprocess(
+  val => typeof val === 'string' ? JSON.parse(val) : val,
+  z.array(z.object({
+    id: z.string().uuid().optional(),
+    borrower: z.string(),
+    amount: z.coerce.number(),
+    interestRate: z.coerce.number(),
+    monthlyPayment: z.coerce.number(),
+    remainingBalance: z.coerce.number(),
+    dueDate: z.coerce.date(),
+  }))
+).optional(),
 
-  newCredits: z.array(creditSchema).optional(),
-
-  removedCredits: z.array(z.string().uuid()).optional(),
+ 
 
   
   campaignId: z.string().uuid()
 
 }).superRefine((data, ctx) => {
   
-  const hasAnyCredit =
-    (data.newCredits && data.newCredits.length > 0) ||
-    (data.existingCredits && data.existingCredits.length > 0)
+  const hasAnyCredit = (data.credits && data.credits.length > 0) 
+   
 
   if (data.hasCredit && !hasAnyCredit) {
     ctx.addIssue({

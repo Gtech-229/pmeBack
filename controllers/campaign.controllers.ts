@@ -426,6 +426,7 @@ export const deleteCampaignStep = asyncHandler(
 
 export const updateCampaignStep = asyncHandler(
   async (req: AuthRequest, res: Response) => {
+  
     const { campaignId } = req.params
 
     if (!campaignId) {
@@ -540,7 +541,7 @@ export const getCampaignSteps = asyncHandler(
  */
 export const updateCampaign = asyncHandler(
   async (req: AuthRequest, res: Response) => {
-    console.log(req.body)
+    
     const { id } = req.params
     const { name, description, status, targetProjects } = req.body
 

@@ -157,7 +157,6 @@ exports.PMEScalarFieldEnum = {
     administrative: 'administrative',
     city: 'city',
     address: 'address',
-    activityField: 'activityField',
     ownerId: 'ownerId',
     isActive: 'isActive',
     createdAt: 'createdAt',
@@ -176,6 +175,7 @@ exports.ProjectScalarFieldEnum = {
     currentStepOrder: 'currentStepOrder',
     hasCredit: 'hasCredit',
     campaignId: 'campaignId',
+    sectorId: 'sectorId',
     createdAt: 'createdAt',
     updatedAt: 'updatedAt'
 };

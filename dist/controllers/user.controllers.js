@@ -15,6 +15,7 @@ const auth_1 = require("../utils/auth");
  * @access Private
  */
 exports.createUser = (0, express_async_handler_1.default)(async (req, res) => {
+    const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined;
     // Zod validation
     const data = user_schemas_1.createUserSchema.parse(req.body);
     const existingUser = await prisma_1.prisma.user.findUnique({
@@ -64,15 +65,17 @@ exports.createUser = (0, express_async_handler_1.default)(async (req, res) => {
     // Set refresh token in httpOnly cookie
     res.cookie("refreshToken", refreshTkn, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: "strict",
+        secure: true,
+        sameSite: "lax",
+        ...(cookieDomain && { domain: cookieDomain }),
         maxAge: 7 * 24 * 60 * 60 * 1000
     });
     res.cookie("jwt", token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 15 * 60 * 1000 //15m
+        secure: true,
+        sameSite: "lax",
+        ...(cookieDomain && { domain: cookieDomain }),
+        maxAge: 15 * 60 * 1000
     });
     res.status(201).json({ msg: "Created" });
 });
@@ -138,7 +141,6 @@ exports.getUsers = (0, express_async_handler_1.default)(async (req, res) => {
                         type: true,
                         size: true,
                         description: true,
-                        activityField: true,
                         email: true,
                         phone: true,
                         website: true,

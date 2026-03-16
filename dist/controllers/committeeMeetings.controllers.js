@@ -519,7 +519,7 @@ exports.signReport = (0, express_async_handler_1.default)(async (req, res) => {
         const project = projects.find(p => p?.id === decision.projectId);
         if (!project)
             continue;
-        const currentStep = project.stepProgress.find(s => s.status !== 'APPROVED');
+        const currentStep = project.stepProgress.find(s => s.status === 'IN_PROGRESS');
         if (!currentStep)
             continue;
         const isApproved = decision.decision === 'approved';
@@ -593,7 +593,7 @@ exports.signReport = (0, express_async_handler_1.default)(async (req, res) => {
                         status: op.newProjectStatus,
                         currentStepOrder: op.newProjectStatus === 'completed'
                             ? null
-                            : op.nextStepOrder ?? op.currentStepOrder,
+                            : op.newProjectStatus === 'approved' ? op.nextStepOrder : op.currentStepOrder,
                     },
                 });
                 await tx.projectStatusHistory.create({

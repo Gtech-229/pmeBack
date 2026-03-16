@@ -422,7 +422,6 @@ exports.getCampaignSteps = (0, express_async_handler_1.default)(async (req, res)
  * @access Authenticated Admin
  */
 exports.updateCampaign = (0, express_async_handler_1.default)(async (req, res) => {
-    console.log(req.body);
     const { id } = req.params;
     const { name, description, status, targetProjects } = req.body;
     if (!req.user) {

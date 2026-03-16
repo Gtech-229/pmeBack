@@ -14,6 +14,7 @@ const password_1 = require("../utils/password");
  * @access Private
  * **/
 exports.refreshToken = (0, express_async_handler_1.default)(async (req, res) => {
+    const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined;
     const userId = req.userId;
     const refreshTokenPlain = req.cookies.refreshToken;
     if (!userId) {
@@ -82,8 +83,10 @@ exports.refreshToken = (0, express_async_handler_1.default)(async (req, res) => 
     //  Mettre le refresh token en cookie
     res.cookie("refreshToken", newRefreshToken, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict"
+        secure: true,
+        sameSite: "lax",
+        ...(cookieDomain && { domain: cookieDomain }),
+        maxAge: 7 * 24 * 60 * 60 * 1000
     });
     // If mobile client — return refresh token in body
     if (req.headers['x-client-type'] === 'mobile') {

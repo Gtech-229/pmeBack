@@ -66,7 +66,6 @@ exports.validateAccount = (0, express_async_handler_1.default)(async (req, res) 
                 currency: data.currency,
                 administrative: location.administrative,
                 city: location.city,
-                activityField: data.activityField
             }
         });
         await tx.promoter.create({
@@ -232,8 +231,7 @@ exports.getPmes = (0, express_async_handler_1.default)(async (req, res) => {
                 OR: [
                     { name: { contains: search, mode: "insensitive" } },
                     { email: { contains: search, mode: "insensitive" } },
-                    { city: { contains: search, mode: "insensitive" } },
-                    { activityField: { contains: search, mode: "insensitive" } },
+                    { city: { contains: search, mode: "insensitive" } }
                 ],
             }
             : {}),

@@ -700,7 +700,7 @@ for (const decision of decisions) {
   const project = projects.find(p => p?.id === decision.projectId)
   if (!project) continue
 
-  const currentStep = project.stepProgress.find(s => s.status !== 'APPROVED')
+ const currentStep = project.stepProgress.find(s => s.status === 'IN_PROGRESS')
   if (!currentStep) continue
 
  
@@ -789,7 +789,7 @@ await prisma.$transaction(
             currentStepOrder:
               op.newProjectStatus === 'completed'
                 ? null
-                : op.nextStepOrder ?? op.currentStepOrder,
+                : op.newProjectStatus === 'approved' ? op.nextStepOrder : op.currentStepOrder,
           },
         })
 

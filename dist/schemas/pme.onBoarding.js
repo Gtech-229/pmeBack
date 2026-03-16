@@ -20,11 +20,6 @@ exports.step1Schema = zod_1.z.object({
     description: zod_1.z
         .string({ error: (iss) => iss.input === undefined ? "Une description devotre entreprise est requise" : "Invalid input" })
         .min(30, { error: "Trop court" }),
-    activityField: zod_1.z
-        .string()
-        .min(4, {
-        error: (iss) => iss.input === undefined ? "Saisissew votre secteur d'activite" : "Entree invalide"
-    })
 });
 exports.step2Schema = zod_1.z.object({
     email: zod_1.z.string({

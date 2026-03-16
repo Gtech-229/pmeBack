@@ -21,6 +21,7 @@ const accountValidation_template_1 = require("../utils/templates/emails/accountV
  * @access  Public
  */
 exports.login = (0, express_async_handler_1.default)(async (req, res) => {
+    const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined;
     const parsed = user_schemas_1.loginSchema.parse(req.body);
     const { email, password } = parsed;
     if (!email || !password) {
@@ -51,15 +52,17 @@ exports.login = (0, express_async_handler_1.default)(async (req, res) => {
     // Set refresh token in httpOnly cookie
     res.cookie("refreshToken", refreshTkn, {
         httpOnly: true,
-        secure: process.env.NODE_ENV !== 'development',
-        sameSite: "strict",
+        secure: true,
+        sameSite: "lax",
+        ...(cookieDomain && { domain: cookieDomain }),
         maxAge: 7 * 24 * 60 * 60 * 1000
     });
     res.cookie("jwt", token, {
         httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 15 * 60 * 1000 //15m
+        secure: true,
+        sameSite: "lax",
+        ...(cookieDomain && { domain: cookieDomain }),
+        maxAge: 15 * 60 * 1000
     });
     res.status(200).json({ token });
 });
@@ -136,7 +139,8 @@ exports.getMe = (0, express_async_handler_1.default)(async (req, res) => {
                                     campaignStep: true
                                 }
                             },
-                            campaign: { include: { steps: true } }
+                            campaign: { include: { steps: true } },
+                            sector: true
                         }
                     },
                     promoter: true
