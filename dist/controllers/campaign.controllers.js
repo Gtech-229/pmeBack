@@ -342,47 +342,38 @@ exports.updateCampaignStep = (0, express_async_handler_1.default)(async (req, re
         throw new Error("Payload invalide");
     }
     const steps = parsed.data;
+    // Detacher les comites 
+    for (const step of steps) {
+        await prisma_1.prisma.committee.updateMany({
+            where: { stepId: step.id },
+            data: { stepId: null },
+        });
+        // Attacher a nouveau les vouveles steps aux comites
+        if (step.committeeId) {
+            await prisma_1.prisma.committee.update({
+                where: { id: step.committeeId },
+                data: { stepId: step.id },
+            });
+        }
+    }
+    // ── Transaction  ──
     await prisma_1.prisma.$transaction(async (tx) => {
-        //  PHASE 1 — neutraliser les orders
-        for (const step of steps) {
-            await tx.campaignStep.update({
-                where: { id: step.id },
-                data: {
-                    order: step.order + 1000, // ← offset temporaire
-                },
-            });
-        }
-        //  PHASE 2 — appliquer les vraies valeurs
-        for (const step of steps) {
-            await tx.campaignStep.update({
-                where: { id: step.id },
-                data: {
-                    name: step.name,
-                    order: step.order,
-                    setsProjectStatus: step.setsProjectStatus ?? null,
-                },
-            });
-        }
-        //  PHASE 3 — gérer les comités
-        for (const step of steps) {
-            // détacher anciens
-            await tx.committee.updateMany({
-                where: { stepId: step.id },
-                data: { stepId: null },
-            });
-            // attacher nouveau
-            if (step.committeeId) {
-                await tx.committee.update({
-                    where: { id: step.committeeId },
-                    data: { stepId: step.id },
-                });
-            }
-        }
-    });
-    res.status(200).json({
-        success: true,
-        message: "Étapes mises à jour avec succès",
-    });
+        // Phase 1 — neutralize orders
+        await Promise.all(steps.map(step => tx.campaignStep.update({
+            where: { id: step.id },
+            data: { order: step.order + 1000 },
+        })));
+        // Phase 2 — apply real values
+        await Promise.all(steps.map(step => tx.campaignStep.update({
+            where: { id: step.id },
+            data: {
+                name: step.name,
+                order: step.order,
+                setsProjectStatus: step.setsProjectStatus ?? null,
+            },
+        })));
+    }, { timeout: 30000 });
+    res.status(200).json({ success: true, message: "Étapes mises à jour avec succès" });
 });
 /**
  * @description Get campaign progression steps
@@ -492,7 +483,7 @@ exports.deleteCampaign = (0, express_async_handler_1.default)(async (req, res) =
     }
     if (campaign.projects.length > 0) {
         res.status(400);
-        throw new Error("Impossible de supprimer une campagne contenant des projets");
+        throw new Error(`Impossible de supprimer cette campagne : elle contient ${campaign.projects.length} projet(s). Veuillez les supprimer ou les transférer avant de continuer.`);
     }
     await prisma_1.prisma.campaign.delete({ where: { id } });
     res.status(200).json({ success: true });

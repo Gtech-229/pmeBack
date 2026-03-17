@@ -443,51 +443,49 @@ export const updateCampaignStep = asyncHandler(
 
     const steps = parsed.data
 
-  await prisma.$transaction(async (tx) => {
-  //  PHASE 1 — neutraliser les orders
-  for (const step of steps) {
-    await tx.campaignStep.update({
-      where: { id: step.id },
-      data: {
-        order: step.order + 1000, // ← offset temporaire
-      },
+ // Detacher les comites 
+for (const step of steps) {
+  await prisma.committee.updateMany({
+    where: { stepId: step.id },
+    data: { stepId: null },
+  })
+  // Attacher a nouveau les vouveles steps aux comites
+  if (step.committeeId) {
+    await prisma.committee.update({
+      where: { id: step.committeeId },
+      data: { stepId: step.id },
     })
   }
+}
 
-  //  PHASE 2 — appliquer les vraies valeurs
-  for (const step of steps) {
-    await tx.campaignStep.update({
-      where: { id: step.id },
-      data: {
-        name: step.name,
-        order: step.order,
-        setsProjectStatus: step.setsProjectStatus ?? null,
-      },
-    })
-  }
-
-  //  PHASE 3 — gérer les comités
-  for (const step of steps) {
-    // détacher anciens
-    await tx.committee.updateMany({
-      where: { stepId: step.id },
-      data: { stepId: null },
-    })
-
-    // attacher nouveau
-    if (step.committeeId) {
-      await tx.committee.update({
-        where: { id: step.committeeId },
-        data: { stepId: step.id },
+// ── Transaction  ──
+await prisma.$transaction(async (tx) => {
+  // Phase 1 — neutralize orders
+  await Promise.all(
+    steps.map(step =>
+      tx.campaignStep.update({
+        where: { id: step.id },
+        data: { order: step.order + 1000 },
       })
-    }
-  }
-})
+    )
+  )
 
-    res.status(200).json({
-      success: true,
-      message: "Étapes mises à jour avec succès",
-    })
+  // Phase 2 — apply real values
+  await Promise.all(
+    steps.map(step =>
+      tx.campaignStep.update({
+        where: { id: step.id },
+        data: {
+          name: step.name,
+          order: step.order,
+          setsProjectStatus: step.setsProjectStatus ?? null,
+        },
+      })
+    )
+  )
+}, { timeout: 30000 })
+
+res.status(200).json({ success: true, message: "Étapes mises à jour avec succès" })
   }
 )
 
