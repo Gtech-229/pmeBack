@@ -12,7 +12,7 @@ import { sendEmail } from "../utils/sendEmail"
 import { generateCode } from "../utils/generateCode"
 import { resetPasswordTemplate } from "../utils/templates/emails/resetPassword.template"
 import { accountValidationTemplate } from "../utils/templates/emails/accountValidation.template"
-import { getCookieOptions } from "../utils/cookiesOptions"
+import { clearCookieOptions, getCookieOptions } from "../utils/cookiesOptions"
 /**
  * @desc    Login user
  * @route   POST /api/auth/login
@@ -119,9 +119,9 @@ export const logout = asyncHandler(async (req: AuthRequest, res: Response) => {
   
 
   // Supprimer les cookies
-  res.clearCookie("refreshToken", getCookieOptions(0))
+  res.clearCookie("refreshToken", clearCookieOptions())
 
-  res.clearCookie("jwt", getCookieOptions(0))
+  res.clearCookie("jwt", clearCookieOptions())
 
 
 

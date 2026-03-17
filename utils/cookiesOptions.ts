@@ -1,8 +1,19 @@
+import { CookieOptions } from "express"
+
 // utils/cookieOptions.ts
-export const getCookieOptions = (maxAge: number) => ({
+const isProd = process.env.NODE_ENV === "production"
+
+export const getCookieOptions = (maxAge: number): CookieOptions => ({
   httpOnly: true,
-  secure: true,
-  sameSite: "lax" as const,
-  ...(process.env.NODE_ENV === "production" && { domain: ".suivi-mp.com" }),
+  secure: isProd,                          // required for sameSite: "none"
+  sameSite: isProd ? "none" : "lax",       // "none" for cross-subdomain in prod
+  ...(isProd && { domain: ".suivi-mp.com" }), // leading dot = all subdomains
   maxAge,
+})
+
+export const clearCookieOptions = (): CookieOptions => ({
+  httpOnly: true,
+  secure: isProd,
+  sameSite: isProd ? "none" : "lax",
+  ...(isProd && { domain: ".suivi-mp.com" }),
 })
