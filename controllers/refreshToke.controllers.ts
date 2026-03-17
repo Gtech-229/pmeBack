@@ -4,6 +4,7 @@ import { RefreshRequest } from "../types"
 import { Response } from "express"
 import { generateToken, generateRefreshToken } from "../utils/auth"
 import { comparePassword, hashPassword } from "../utils/password"
+import { getCookieOptions } from "../utils/cookiesOptions"
 
 
 /**
@@ -98,13 +99,7 @@ export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Respon
   })
 
   //  Mettre le refresh token en cookie
-  res.cookie("refreshToken", newRefreshToken, {
-  httpOnly: true,
-  secure: true,
-  sameSite: "lax",
- ...(cookieDomain && { domain: cookieDomain }),
-  maxAge: 7 * 24 * 60 * 60 * 1000
-})
+  res.cookie("refreshToken", newRefreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000))
 
   // If mobile client — return refresh token in body
 if (req.headers['x-client-type'] === 'mobile') {
