@@ -7,13 +7,14 @@ import { AuthRequest, Role } from "../types"
 import { UpdateUserDTO } from "../types/user.dto"
 import { generateRefreshToken, generateToken } from "../utils/auth"
 import { Prisma } from "../generated/prisma/client"
+import { getCookieOptions } from "../utils/cookiesOptions"
 /**
  * @desc CREATE user
  * @route POST /api/users
  * @access Private
  */
 export const createUser = asyncHandler(async (req: Request, res: Response) => {
-   const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined
+   
   // Zod validation
   const data = createUserSchema.parse(req.body)
 
@@ -78,21 +79,9 @@ export const createUser = asyncHandler(async (req: Request, res: Response) => {
 
 
    // Set refresh token in httpOnly cookie
- res.cookie("refreshToken", refreshTkn, {
-  httpOnly: true,
-  secure: true,
-  sameSite: "lax",
-   ...(cookieDomain && { domain: cookieDomain }),
-  maxAge: 7 * 24 * 60 * 60 * 1000
-})
+ res.cookie("refreshToken", refreshTkn,getCookieOptions(7 * 24 * 60 * 60 * 1000))
 
-res.cookie("jwt", token, {
-  httpOnly: true,
-  secure: true,
-  sameSite: "lax",
- ...(cookieDomain && { domain: cookieDomain }),
-  maxAge: 15 * 60 * 1000
-})
+res.cookie("jwt", token, getCookieOptions(15 * 60 * 1000))
 
 
 

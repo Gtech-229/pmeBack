@@ -12,13 +12,14 @@ import { sendEmail } from "../utils/sendEmail"
 import { generateCode } from "../utils/generateCode"
 import { resetPasswordTemplate } from "../utils/templates/emails/resetPassword.template"
 import { accountValidationTemplate } from "../utils/templates/emails/accountValidation.template"
+import { getCookieOptions } from "../utils/cookiesOptions"
 /**
  * @desc    Login user
  * @route   POST /api/auth/login
  * @access  Public
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
-   const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined
+  
   const parsed = loginSchema.parse(req.body)
 
   const { email, password } = parsed
@@ -61,21 +62,9 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
 
 
    // Set refresh token in httpOnly cookie
- res.cookie("refreshToken", refreshTkn, {
-  httpOnly: true,
-  secure: true,
-  sameSite: "lax",
- ...(cookieDomain && { domain: cookieDomain }),
-  maxAge: 7 * 24 * 60 * 60 * 1000
-})
+ res.cookie("refreshToken", refreshTkn, getCookieOptions(7 * 24 * 60 * 60 * 1000))
 
-res.cookie("jwt", token, {
-  httpOnly: true,
-  secure: true,
-  sameSite: "lax",
- ...(cookieDomain && { domain: cookieDomain }),
-  maxAge: 15 * 60 * 1000
-})
+res.cookie("jwt", token, getCookieOptions(15 * 60 * 1000))
 
  res.status(200).json({token});
 })
@@ -130,17 +119,9 @@ export const logout = asyncHandler(async (req: AuthRequest, res: Response) => {
   
 
   // Supprimer les cookies
-  res.clearCookie("refreshToken", {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production"
-  })
+  res.clearCookie("refreshToken", getCookieOptions(0))
 
-  res.clearCookie("jwt", {
-    httpOnly: true,
-    sameSite: "strict",
-    secure: process.env.NODE_ENV === "production"
-  })
+  res.clearCookie("jwt", getCookieOptions(0))
 
 
 
@@ -289,7 +270,7 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
     throw new Error("Refresh token not recognized")
   }
 
-  // 4️⃣ Récupérer l'utilisateur
+  //  Récupérer l'utilisateur
   const user = await prisma.user.findUnique({
     where: { id: decoded.id }
   })
@@ -318,26 +299,16 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
     }
   })
 
-  // 6️⃣ Générer un nouvel access token
+  //  Générer un nouvel access token
   const accessToken = generateToken({
     id: user.id,
     role: user.role
   })
 
-  // 7️⃣ Mettre à jour les cookies
-  res.cookie("jwt", accessToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: 15 * 60 * 1000 // 15 min
-  })
+  //  Mettre à jour les cookies
+  res.cookie("jwt", accessToken, getCookieOptions(15 * 60 * 1000))
 
-  res.cookie("refreshToken", newRefreshToken, {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === "production",
-    sameSite: "strict",
-    maxAge: 7 * 24 * 60 * 60 * 1000
-  })
+  res.cookie("refreshToken", newRefreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000))
 
   res.status(200).json({ message: "Token refreshed" })
 })
@@ -508,7 +479,14 @@ export const newPassword = asyncHandler(async (req: Request, res: Response) => {
     },
   })
 
-  const user = users?.find(u => u.resetPasswordToken  && comparePassword(token, u.resetPasswordToken));
+  // Add async and await the comparison
+const user = await Promise.all(
+  users.map(async u => {
+    if (!u.resetPasswordToken) return null
+    const match = await comparePassword(token, u.resetPasswordToken)
+    return match ? u : null
+  })
+).then(results => results.find(Boolean))
 
 
   if (!user) {
