@@ -9,13 +9,13 @@ const prisma_1 = require("../lib/prisma");
 const user_schemas_1 = require("../schemas/user.schemas");
 const password_1 = require("../utils/password");
 const auth_1 = require("../utils/auth");
+const cookiesOptions_1 = require("../utils/cookiesOptions");
 /**
  * @desc CREATE user
  * @route POST /api/users
  * @access Private
  */
 exports.createUser = (0, express_async_handler_1.default)(async (req, res) => {
-    const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined;
     // Zod validation
     const data = user_schemas_1.createUserSchema.parse(req.body);
     const existingUser = await prisma_1.prisma.user.findUnique({
@@ -63,20 +63,8 @@ exports.createUser = (0, express_async_handler_1.default)(async (req, res) => {
         }
     });
     // Set refresh token in httpOnly cookie
-    res.cookie("refreshToken", refreshTkn, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        ...(cookieDomain && { domain: cookieDomain }),
-        maxAge: 7 * 24 * 60 * 60 * 1000
-    });
-    res.cookie("jwt", token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        ...(cookieDomain && { domain: cookieDomain }),
-        maxAge: 15 * 60 * 1000
-    });
+    res.cookie("refreshToken", refreshTkn, (0, cookiesOptions_1.getCookieOptions)(7 * 24 * 60 * 60 * 1000));
+    res.cookie("jwt", token, (0, cookiesOptions_1.getCookieOptions)(15 * 60 * 1000));
     res.status(201).json({ msg: "Created" });
 });
 /**

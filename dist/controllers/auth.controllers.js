@@ -15,13 +15,13 @@ const sendEmail_1 = require("../utils/sendEmail");
 const generateCode_1 = require("../utils/generateCode");
 const resetPassword_template_1 = require("../utils/templates/emails/resetPassword.template");
 const accountValidation_template_1 = require("../utils/templates/emails/accountValidation.template");
+const cookiesOptions_1 = require("../utils/cookiesOptions");
 /**
  * @desc    Login user
  * @route   POST /api/auth/login
  * @access  Public
  */
 exports.login = (0, express_async_handler_1.default)(async (req, res) => {
-    const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined;
     const parsed = user_schemas_1.loginSchema.parse(req.body);
     const { email, password } = parsed;
     if (!email || !password) {
@@ -50,20 +50,8 @@ exports.login = (0, express_async_handler_1.default)(async (req, res) => {
         }
     });
     // Set refresh token in httpOnly cookie
-    res.cookie("refreshToken", refreshTkn, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        ...(cookieDomain && { domain: cookieDomain }),
-        maxAge: 7 * 24 * 60 * 60 * 1000
-    });
-    res.cookie("jwt", token, {
-        httpOnly: true,
-        secure: true,
-        sameSite: "lax",
-        ...(cookieDomain && { domain: cookieDomain }),
-        maxAge: 15 * 60 * 1000
-    });
+    res.cookie("refreshToken", refreshTkn, (0, cookiesOptions_1.getCookieOptions)(7 * 24 * 60 * 60 * 1000));
+    res.cookie("jwt", token, (0, cookiesOptions_1.getCookieOptions)(15 * 60 * 1000));
     res.status(200).json({ token });
 });
 /**
@@ -104,16 +92,12 @@ exports.logout = (0, express_async_handler_1.default)(async (req, res) => {
         }
     });
     // Supprimer les cookies
-    res.clearCookie("refreshToken", {
-        httpOnly: true,
-        sameSite: "strict",
-        secure: process.env.NODE_ENV === "production"
-    });
-    res.clearCookie("jwt", {
-        httpOnly: true,
-        sameSite: "strict",
-        secure: process.env.NODE_ENV === "production"
-    });
+    res.clearCookie("refreshToken", { domain: ".suivi-mp.com", path: "/" });
+    res.clearCookie("refreshToken", { domain: "api.suivi-mp.com", path: "/" });
+    res.clearCookie("refreshToken", { path: "/" });
+    res.clearCookie("jwt", { domain: ".suivi-mp.com", path: "/" });
+    res.clearCookie("jwt", { domain: "api.suivi-mp.com", path: "/" });
+    res.clearCookie("jwt", { path: "/" });
     res.status(200).json({ message: "Logged out successfully" });
 });
 /**
@@ -225,7 +209,7 @@ exports.refreshToken = (0, express_async_handler_1.default)(async (req, res) => 
         res.status(403);
         throw new Error("Refresh token not recognized");
     }
-    // 4️⃣ Récupérer l'utilisateur
+    //  Récupérer l'utilisateur
     const user = await prisma_1.prisma.user.findUnique({
         where: { id: decoded.id }
     });
@@ -248,24 +232,14 @@ exports.refreshToken = (0, express_async_handler_1.default)(async (req, res) => 
             expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
         }
     });
-    // 6️⃣ Générer un nouvel access token
+    //  Générer un nouvel access token
     const accessToken = (0, auth_1.generateToken)({
         id: user.id,
         role: user.role
     });
-    // 7️⃣ Mettre à jour les cookies
-    res.cookie("jwt", accessToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 15 * 60 * 1000 // 15 min
-    });
-    res.cookie("refreshToken", newRefreshToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === "production",
-        sameSite: "strict",
-        maxAge: 7 * 24 * 60 * 60 * 1000
-    });
+    //  Mettre à jour les cookies
+    res.cookie("jwt", accessToken, (0, cookiesOptions_1.getCookieOptions)(15 * 60 * 1000));
+    res.cookie("refreshToken", newRefreshToken, (0, cookiesOptions_1.getCookieOptions)(7 * 24 * 60 * 60 * 1000));
     res.status(200).json({ message: "Token refreshed" });
 });
 /**
@@ -386,7 +360,13 @@ exports.newPassword = (0, express_async_handler_1.default)(async (req, res) => {
             resetPasswordExpires: { gte: new Date() }, // token non expiré
         },
     });
-    const user = users?.find(u => u.resetPasswordToken && (0, password_1.comparePassword)(token, u.resetPasswordToken));
+    // Add async and await the comparison
+    const user = await Promise.all(users.map(async (u) => {
+        if (!u.resetPasswordToken)
+            return null;
+        const match = await (0, password_1.comparePassword)(token, u.resetPasswordToken);
+        return match ? u : null;
+    })).then(results => results.find(Boolean));
     if (!user) {
         res.status(400);
         throw new Error("Lien invalide ou expiré");

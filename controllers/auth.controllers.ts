@@ -119,10 +119,13 @@ export const logout = asyncHandler(async (req: AuthRequest, res: Response) => {
   
 
   // Supprimer les cookies
-  res.clearCookie("refreshToken", clearCookieOptions())
+ res.clearCookie("refreshToken", { domain: ".suivi-mp.com", path: "/" })
+res.clearCookie("refreshToken", { domain: "api.suivi-mp.com", path: "/" })
+res.clearCookie("refreshToken", { path: "/" })
 
-  res.clearCookie("jwt", clearCookieOptions())
-
+res.clearCookie("jwt", { domain: ".suivi-mp.com", path: "/" })
+res.clearCookie("jwt", { domain: "api.suivi-mp.com", path: "/" })
+res.clearCookie("jwt", { path: "/" })
 
 
 

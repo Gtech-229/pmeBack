@@ -16,4 +16,5 @@ export const clearCookieOptions = (): CookieOptions => ({
   secure: isProd,
   sameSite: isProd ? "none" : "lax",
   ...(isProd && { domain: ".suivi-mp.com" }),
+   path: "/", 
 })
