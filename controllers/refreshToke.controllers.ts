@@ -13,10 +13,12 @@ import { getCookieOptions } from "../utils/cookiesOptions"
  * @access Private 
  * **/ 
 export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => {
-  const cookieDomain = process.env.NODE_ENV === "production" ? ".suivi-mp.com" : undefined
+  
 
   const userId = req.userId
   const refreshTokenPlain = req.cookies.refreshToken
+
+  
 
   if (!userId) {
     res.status(401)
@@ -102,13 +104,11 @@ export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Respon
   res.cookie("refreshToken", newRefreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000))
 
   // If mobile client — return refresh token in body
-if (req.headers['x-client-type'] === 'mobile') {
-  res.json({ newAccessToken, newRefreshToken }); 
-} else {
+
 
 
   res.json({ accessToken: newAccessToken })
-}
+
 
  
 })
