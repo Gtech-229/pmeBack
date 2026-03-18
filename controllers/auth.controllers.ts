@@ -119,13 +119,11 @@ export const logout = asyncHandler(async (req: AuthRequest, res: Response) => {
   
 
   // Supprimer les cookies
- res.clearCookie("refreshToken", { domain: ".suivi-mp.com", path: "/" })
-res.clearCookie("refreshToken", { domain: "api.suivi-mp.com", path: "/" })
-res.clearCookie("refreshToken", { path: "/" })
+ res.clearCookie("refreshToken", clearCookieOptions())
 
-res.clearCookie("jwt", { domain: ".suivi-mp.com", path: "/" })
-res.clearCookie("jwt", { domain: "api.suivi-mp.com", path: "/" })
-res.clearCookie("jwt", { path: "/" })
+
+res.clearCookie("jwt", clearCookieOptions())
+
 
 
 
@@ -441,7 +439,7 @@ export const resetPassword = asyncHandler(async(req : Request, res:Response)=>{
     },
   })
 
-  const frontendUrl = process.env.NODE_ENV === 'production' ? "https://suivi-mp/client.com" : "http://localhost:3000"
+  const frontendUrl = process.env.NODE_ENV === 'production' ? "https://suivi-mp.com" : "http://localhost:3000"
 
   const resetUrl = `${frontendUrl}/reset-password/${rawToken}`
 // Email
