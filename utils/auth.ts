@@ -5,7 +5,7 @@ import { AuthRequest, JWTPayLoads , RefreshRequest} from "../types";
 
 
 const JWT_SECRET = process.env.JWT_SECRET !
-const REFRESH_SECRET = process.env.JWT_SECRET !
+const REFRESH_SECRET = process.env.REFRESH_SECRET !
 
 /**
  * Function to generate a JWT token
