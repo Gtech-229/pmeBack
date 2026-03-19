@@ -4,7 +4,7 @@ import { prisma } from "../lib/prisma"
 import { comparePassword, hashPassword } from "../utils/password"
 import { generateRefreshToken, generateToken } from "../utils/auth"
 import { loginSchema } from "../schemas/user.schemas"
-import { AuthRequest } from "../types"
+import { AuthRequest, RefreshRequest } from "../types"
 import jwt from 'jsonwebtoken'
 import bcrypt from 'bcryptjs'
 import { sendEmail } from "../utils/sendEmail"
@@ -224,7 +224,7 @@ export const getMe = asyncHandler(
 
 
 
-const REFRESH_SECRET = process.env.JWT_SECRET!
+const REFRESH_SECRET = process.env.REFRESH_SECRET!
 
 
 /**
@@ -232,25 +232,23 @@ const REFRESH_SECRET = process.env.JWT_SECRET!
  * @route   POST /api/auth/refresh
  * @access  Public (via refresh token cookie)
  */
-export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
+export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Response) => {
   const refreshTokenPlain = req.cookies?.refreshToken || req.body.refreshToken
+  if(!req.userId){
+    throw new Error('No user')
+  }
 
+ 
   if (!refreshTokenPlain) {
     res.status(401)
     throw new Error("Refresh token missing")
   }
 
-  let decoded: { id: string }
-  try {
-    decoded = jwt.verify(refreshTokenPlain, REFRESH_SECRET) as { id: string }
-  } catch (error) {
-    res.status(403)
-    throw new Error("Invalid refresh token")
-  }
+ 
 
   const storedTokens = await prisma.refreshToken.findMany({
     where: {
-      userId: decoded.id,
+      userId: req.userId,
       revokedAt: null,
       expiresAt: { gt: new Date() }
     }
@@ -283,7 +281,7 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
   }
 
   // ─── Only the winner reaches here ─────────────────────────────────────
-  const user = await prisma.user.findUnique({ where: { id: decoded.id } })
+  const user = await prisma.user.findUnique({ where: { id: req.userId } })
 
   if (!user) {
     res.status(401)
@@ -306,6 +304,8 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
   res.cookie("jwt", accessToken, getCookieOptions(15 * 60 * 1000))
   res.cookie("refreshToken", newRefreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000))
   res.status(200).json({ message: "Token refreshed" })
+
+ 
 })
 
 

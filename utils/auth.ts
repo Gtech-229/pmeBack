@@ -78,8 +78,7 @@ export const verifyRefreshToken = (
   const refreshToken = req.cookies?.refreshToken
     || req.body.refreshToken
 
-     console.log("Refresh attempt — token present:", !!refreshToken)
-  console.log("Cookies received:", req.cookies)
+    
 
   if (!refreshToken) {
     return res.status(401).json({ message: "Refresh token missing" })
