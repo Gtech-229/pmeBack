@@ -223,27 +223,21 @@ const REFRESH_SECRET = process.env.JWT_SECRET!
  * @access  Public (via refresh token cookie)
  */
 export const refreshToken = asyncHandler(async (req: Request, res: Response) => {
-  const refreshTokenPlain =
-    req.cookies?.refreshToken || req.body.refreshToken
+  const refreshTokenPlain = req.cookies?.refreshToken || req.body.refreshToken
 
   if (!refreshTokenPlain) {
     res.status(401)
     throw new Error("Refresh token missing")
   }
 
-  
   let decoded: { id: string }
   try {
-    decoded = jwt.verify(
-      refreshTokenPlain,
-      REFRESH_SECRET
-    ) as { id: string }
+    decoded = jwt.verify(refreshTokenPlain, REFRESH_SECRET) as { id: string }
   } catch (error) {
     res.status(403)
     throw new Error("Invalid refresh token")
   }
 
-  // 
   const storedTokens = await prisma.refreshToken.findMany({
     where: {
       userId: decoded.id,
@@ -252,14 +246,9 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
     }
   })
 
-  
   let matchedToken = null
-
   for (const token of storedTokens) {
-    const isMatch = await comparePassword(
-      refreshTokenPlain,
-      token.token
-    )
+    const isMatch = await comparePassword(refreshTokenPlain, token.token)
     if (isMatch) {
       matchedToken = token
       break
@@ -271,23 +260,25 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
     throw new Error("Refresh token not recognized")
   }
 
-  //  Récupérer l'utilisateur
-  const user = await prisma.user.findUnique({
-    where: { id: decoded.id }
+  // ─── Atomic revoke — race condition safe ──────────────────────────────
+  const revoked = await prisma.refreshToken.updateMany({
+    where: { id: matchedToken.id, revokedAt: null },
+    data: { revokedAt: new Date() }
   })
 
-  if (!user ) {
+  // Lost the race — winner already issued new tokens, return 200 silently
+  if (revoked.count === 0) {
+    res.status(200).json({ message: "Token already refreshed" })
+    return
+  }
+
+  // ─── Only the winner reaches here ─────────────────────────────────────
+  const user = await prisma.user.findUnique({ where: { id: decoded.id } })
+
+  if (!user) {
     res.status(401)
     throw new Error("User not found or inactive")
   }
-
-  // !user.isActive
-
-  // Rotation du refresh token (sécurité)
-  await prisma.refreshToken.update({
-    where: { id: matchedToken.id },
-    data: { revokedAt: new Date() }
-  })
 
   const newRefreshToken = generateRefreshToken(user.id)
   const hashedRefreshToken = await hashPassword(newRefreshToken)
@@ -300,17 +291,10 @@ export const refreshToken = asyncHandler(async (req: Request, res: Response) => 
     }
   })
 
-  //  Générer un nouvel access token
-  const accessToken = generateToken({
-    id: user.id,
-    role: user.role
-  })
+  const accessToken = generateToken({ id: user.id, role: user.role })
 
-  //  Mettre à jour les cookies
   res.cookie("jwt", accessToken, getCookieOptions(15 * 60 * 1000))
-
   res.cookie("refreshToken", newRefreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000))
-
   res.status(200).json({ message: "Token refreshed" })
 })
 
