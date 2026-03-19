@@ -10,6 +10,17 @@ const base: CookieOptions = {
   ...(isProd && { domain: ".suivi-mp.com" }),
 }
 
+
+
+
+export const clearSessionCookieOptions = (): CookieOptions => ({
+  httpOnly: false,        
+  secure: isProd,
+  sameSite: isProd ? "none" : "lax",
+  path: "/",
+  ...(isProd && { domain: ".suivi-mp.com" }),
+})
+
 export const getCookieOptions = (maxAge: number): CookieOptions => ({
   ...base,
   maxAge,

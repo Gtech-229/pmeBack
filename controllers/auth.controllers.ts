@@ -12,14 +12,14 @@ import { sendEmail } from "../utils/sendEmail"
 import { generateCode } from "../utils/generateCode"
 import { resetPasswordTemplate } from "../utils/templates/emails/resetPassword.template"
 import { accountValidationTemplate } from "../utils/templates/emails/accountValidation.template"
-import { clearCookieOptions, getCookieOptions } from "../utils/cookiesOptions"
+import { clearCookieOptions, clearSessionCookieOptions, getCookieOptions } from "../utils/cookiesOptions"
 /**
  * @desc    Login user
  * @route   POST /api/auth/login
  * @access  Public
  */
 export const login = asyncHandler(async (req: Request, res: Response) => {
-  
+  const isProd = process.env.NODE_ENV === "production"
   const parsed = loginSchema.parse(req.body)
 
   const { email, password } = parsed
@@ -65,6 +65,16 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
  res.cookie("refreshToken", refreshTkn, getCookieOptions(7 * 24 * 60 * 60 * 1000))
 
 res.cookie("jwt", token, getCookieOptions(15 * 60 * 1000))
+// In login controller alongside your other cookies
+res.cookie("hasSession", "1", {
+  httpOnly: false,       
+  secure: isProd,
+  sameSite: isProd ? "none" : "lax",
+  ...(isProd && { domain: ".suivi-mp.com" }),
+  maxAge: 7 * 24 * 60 * 60 * 1000
+})
+
+
 
  res.status(200).json({token});
 })
@@ -121,7 +131,7 @@ export const logout = asyncHandler(async (req: AuthRequest, res: Response) => {
   // Supprimer les cookies
  res.clearCookie("refreshToken", clearCookieOptions())
 
-
+res.clearCookie("hasSession", clearSessionCookieOptions())
 res.clearCookie("jwt", clearCookieOptions())
 
 
