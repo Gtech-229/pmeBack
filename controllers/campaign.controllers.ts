@@ -5,16 +5,17 @@ import { prisma } from "../lib/prisma"
 import { createCampaignSchema, createCampaignStepsSchema, updateCampaignStepSchema, updateCampaignStepsSchema } from "../schemas/campaign.schema"
 import { CampaignStatus, Gender, MaritalStatus, ProjectType } from "../generated/prisma/enums"
 import { Prisma } from "../generated/prisma/client"
+import { CampaignWhereInput } from "../generated/prisma/models"
 
 /**
- * @description Get campaigns
+ * @description Get campaigns (paginated)
  * @route GET /campaign
  * @access Authenticated admin
  */
 
 export const getCampaigns = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
-    res.status(403)
+    res.status(401)
     throw new Error("Access denied")
   }
 
@@ -23,7 +24,7 @@ export const getCampaigns = asyncHandler(async (req: AuthRequest, res: Response)
   sector, projectType, 
   minAge, maxAge, 
   gender, maritalStatus,
-  hasDisability 
+  hasDisability
 } = req.query
 
   const take = parseInt(limit as string) || 20
@@ -32,6 +33,7 @@ export const getCampaigns = asyncHandler(async (req: AuthRequest, res: Response)
   const where: Prisma.CampaignWhereInput = {
   ...(status && status !== "all" ? { status: status as CampaignStatus } : {}),
   ...(search ? { name: { contains: search as string, mode: "insensitive" } } : {}),
+ 
 
   ...((sector || projectType || minAge || maxAge || gender || maritalStatus || hasDisability !== undefined) ? {
     criteria: {

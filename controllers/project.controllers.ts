@@ -6,7 +6,10 @@ import { uploadToCloudinary , } from '../utils/UploadToCloudinary'
 import { createProjectBodySchema } from '../schemas/project.schema'
 import { updateProjectSchema } from '../schemas/project.schema'
 import { removeFromCloudinary } from '../utils/RemoveFromCloudinary'
-import { ProjectStatus } from '../generated/prisma/enums'
+import { ProjectStatus, ProjectType } from '../generated/prisma/enums'
+import { Prisma } from '../generated/prisma/client'
+import { getAgeFilter, getDateFilter } from '../utils/functions'
+
 /**
  * @description Create new project
  * @route  POST/projects
@@ -271,67 +274,45 @@ export const getProjects = asyncHandler(
    
   
 
-    const { status, date, search,campaignId, step, limit, page} = req.query
+    const { 
+      status , 
+      date, 
+      search,
+      campaignId, 
+      step,
+       limit,
+        page, 
+        sector,
+        maxAge,
+        minAge,
+        hasDisability,
+        type
+      } = req.query
+
      const take = parseInt(limit as string) || 20
     const skip = (parseInt(page as string) - 1 || 0) * take
-    
-
+ 
 
     //  Build Prisma where clause dynamically
-    const where: any = {}
+    const where: Prisma.ProjectWhereInput = {
+      ...(status && status !== "all" ? {status : status as ProjectStatus} : {}),
+      ...(search ?  {OR :[
+        {title : {contains : search as string}},
+        {pme : {name : {contains : search as string}, promoter : {firstName : {contains : search as string}, lastName : {contains : search as string}}}},
+        
+      ]
+        
+      }: {}),
 
-    if (status && status !== 'all') {
-      where.status = status
+      ...(campaignId && campaignId !== "all" && {campaignId : campaignId as string}),
+      ...(step && step !== "all" && {currentStepOrder : Number(step) as number}),
+      ...(date && date !== "all" ? getDateFilter(date as string) : {}),
+      ...(sector && sector !== "all" ? {sectorId : search as string} : {}),
+        ...(minAge || maxAge ? getAgeFilter(minAge as string, maxAge as string) : {}),
+   ...(hasDisability && {pme : {promoter : {hasDisability : hasDisability === "true"}}} ),
+   ...(type && {type : type as ProjectType} )
     }
 
-    if (search) {
-      where.title = {
-        contains: String(search),
-        mode: 'insensitive',
-      }
-    }
-
-    if (date && date !== 'all') {
-      const now = new Date()
-
-      switch (date) {
-        case 'week':
-          where.createdAt = {
-            gte: new Date(now.setDate(now.getDate() - 7)),
-          }
-          break
-        case 'month':
-          where.createdAt = {
-            gte: new Date(now.setMonth(now.getMonth() - 1)),
-          }
-          break
-        case 'year':
-          where.createdAt = {
-            gte: new Date(now.setFullYear(now.getFullYear() - 1)),
-          }
-          break
-      }
-    }
-
-    if (step && step !== 'all') {
-  where.stepProgress = {
-    some: {
-       status: {
-        in: ['IN_PROGRESS', 'REJECTED'] 
-      },
-      campaignStep: {
-        order: Number(step),
-      },
-    },
-  }
-}
-
-
-
-
-    if(campaignId && campaignId !== 'all'){
-      where.campaignId = campaignId
-    }
 
     //  Fetch data + count in one transaction
     const [projects, total] = await prisma.$transaction([
