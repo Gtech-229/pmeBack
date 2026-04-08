@@ -1,7 +1,7 @@
 import express from "express"
 import { requireRole } from "../middlewares/rbac"
 import { requireAuth } from "../middlewares/requireAuth"
-import { createMeeting, getMeetings, getMeetingDetails, updateMeeting, addMeetingReport, signReport } from "../controllers/committeeMeetings.controllers"
+import { createMeeting, getMeetings, getMeetingDetails, updateMeeting, addMeetingReport, signReport, generatePresenceList } from "../controllers/committeeMeetings.controllers"
 import { upload } from "../middlewares/multer"
 
 const router = express.Router({ mergeParams: true })
@@ -21,5 +21,6 @@ router.route('/:meetingId')
 
 router.post('/:meetingId/report', upload.array('documents'), addMeetingReport)
 router.post('/:meetingId/sign', signReport)
+router.post('/:meetingId/generatePresenceList', generatePresenceList)
 
 export default router

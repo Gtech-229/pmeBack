@@ -280,7 +280,7 @@ export const deleteProfileImg = asyncHandler(async(req:AuthRequest, res:Response
 
 export const getPmes = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user) {
-    res.status(403)
+    res.status(401)
     throw new Error("Access denied")
   }
 

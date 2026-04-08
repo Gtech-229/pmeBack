@@ -75,8 +75,12 @@ res.cookie("hasSession", "1", {
 })
 
 
+ if(req.headers['x-client-type'] === "mobile"){
+  res.status(200).json({token, refreshToken :refreshTkn})
+ }else{
+   res.status(200).json({token});
+ }
 
- res.status(200).json({token});
 })
 
 

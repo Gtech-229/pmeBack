@@ -7,9 +7,9 @@ import { createProjectBodySchema } from '../schemas/project.schema'
 import { updateProjectSchema } from '../schemas/project.schema'
 import { removeFromCloudinary } from '../utils/RemoveFromCloudinary'
 import { ProjectStatus, ProjectType } from '../generated/prisma/enums'
-import { Prisma } from '../generated/prisma/client'
+import { Prisma, Project } from '../generated/prisma/client'
 import { getAgeFilter, getDateFilter } from '../utils/functions'
-
+import { computeCreditDetails } from '../utils/functions'
 /**
  * @description Create new project
  * @route  POST/projects
@@ -32,7 +32,7 @@ export const createProject = asyncHandler(
     })
 
     if (!user || !user.pme?.id) {
-      res.status(403)
+      res.status(401)
       throw new Error("Utilisateur non autorisé à créer un projet")
     }
     const pmeId = user.pme.id
@@ -148,6 +148,7 @@ if (campaign.type === "MONO_PROJECT") {
       currentStepOrder: 1,
       type ,
       sectorId : sectorId ?? null
+      
     },
 
     include : {
@@ -195,20 +196,37 @@ if (campaign.type === "MONO_PROJECT") {
 })
 
 
-  if(credits && Array.isArray(credits) && credits.length > 0 ){
-    await prisma.projectCredit.createMany({
-      data : credits.map((c) => ({
-        borrower : c.borrower,
-        amount : Number(c.amount),
-        interestRate : Number(c.interestRate),
-        monthlyPayment : Number(c.monthlyPayment),
-        dueDate : new Date(c.dueDate),
-        remainingBalance : Number(c.remainingBalance),
-        projectId : project.project.id
+if (credits && Array.isArray(credits) && credits.length > 0) {
+  await prisma.projectCredit.createMany({
+    data: credits.map((c) => {
+      const amount = Number(c.amount)
+      const interestRate = Number(c.interestRate)
+      const durationMonths = Number(c.durationMonths)
+      const remainingBalance = Number(c.remainingBalance)
+      const startDate = new Date(c.startDate)
 
-      }))
+      const { monthlyPayment, endDate } = computeCreditDetails({
+        amount,
+        interestRate,
+        durationMonths,
+        startDate,
+      })
+
+      return {
+        borrower: c.borrower,
+        amount,
+        interestRate,
+        durationMonths,
+        monthlyPayment,        
+        remainingBalance,      
+        startDate,
+        endDate,               
+        status: remainingBalance === 0 ? "COMPLETED" : "ACTIVE",
+        projectId: project.project.id ,
+      }
     })
-  }
+  })
+}
 
 
 
@@ -229,7 +247,7 @@ if (campaign.type === "MONO_PROJECT") {
 
   await prisma.document.create({
     data: {
-      title: label,
+      label,
       fileUrl: uploadResult.url,
       publicId: uploadResult.publicId,
       mimeType: file.mimetype,
@@ -331,7 +349,10 @@ export const getProjects = asyncHandler(
             }
           },
            sector : true,
-          campaign : true
+          campaign : true,
+          credits : {include : {repayments : true}},
+          financialEntries : true,
+          disbursements : true
         },
       }),
       prisma.project.count({ where }),
@@ -388,26 +409,37 @@ export const getProject = asyncHandler( async (req: Request, res: Response)=> {
               
             }
           },
-          campaign : true,
+          campaign : {include : {steps : {include : {documents : true}}}},
           sector : true,
           stepProgress : {
             include : {
               campaignStep :{
                 include: {
-                  committee : true
+                  committee : true,
+                  documents : true
                 }
               },
               stepDocuments : true,
               
             }
           },
-          credits : true
+          credits : {include : {repayments : true}},
+          financialEntries : true,
+          disbursements : true
         } 
     });
 
     if (!project)  res.status(404).json({ message: "Project not found" });
+  
+    
+    const fundedAmount =  project?.disbursements
+    .filter(d => d.isDisbursed)
+    .reduce((sum, d) => sum + d.amount, 0)
 
-    res.status(200).json(project);
+    res.status(200).json({
+      ...project,
+      fundedAmount
+    });
  
 }
 )
@@ -557,7 +589,9 @@ export const updateProject = asyncHandler(async (req: AuthRequest, res: Response
         interestRate: c.interestRate,
         monthlyPayment: c.monthlyPayment,
         remainingBalance: c.remainingBalance,
-        dueDate: c.dueDate,
+         durationMonths : c.durationMonths,
+        startDate : new Date(c.startDate),
+         endDate : new Date(c.endDate),
       }
     })
   }
@@ -571,8 +605,10 @@ export const updateProject = asyncHandler(async (req: AuthRequest, res: Response
         interestRate: c.interestRate,
         monthlyPayment: c.monthlyPayment,
         remainingBalance: c.remainingBalance,
-        dueDate: c.dueDate,
         projectId,
+        durationMonths : c.durationMonths,
+        startDate : new Date(c.startDate),
+         endDate : new Date(c.endDate),
       }))
     })
   }
@@ -611,7 +647,7 @@ export const updateProject = asyncHandler(async (req: AuthRequest, res: Response
       const upload = await uploadToCloudinary(file, `projects/${project.id}`)
       await prisma.document.create({
         data: {
-          title: meta.title,
+          label: meta.title,
           fileUrl: upload.url,
           publicId: upload.publicId,
           mimeType: file.mimetype,
@@ -628,7 +664,7 @@ export const updateProject = asyncHandler(async (req: AuthRequest, res: Response
     where: { id: projectId },
     data: { title, description, requestedAmount, campaignId, hasCredit, type },
     include: {
-      campaign: { include: { steps: true } },
+      campaign: { include: { steps: {include : {documents : true}} } },
       credits: true,
       statusHistory: true,
       stepProgress: {

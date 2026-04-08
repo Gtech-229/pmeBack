@@ -10,6 +10,16 @@ export const PROJECT_STATUSES = [
   "failed",
 ] as const
 
+import { MaritalStatus } from "../generated/prisma/enums";
+
+const maritalStatus = [ "SINGLE",
+  "MARRIED",
+  "DIVORCED",
+  "WIDOWED",] as const
+const MaritalStatusSchema = z.enum(maritalStatus);
+
+
+
 const normalize = (val: string) =>
   val.replace(/\s/g, '').replace(',', '.')
 
@@ -26,20 +36,15 @@ export const campaignCriteriaSchema = z.object({
     return !isNaN(num) && num >= 0
   }, { message: "Âge invalide" }),
 
-  gender: z.enum(["MALE", "FEMALE", "OTHER"]).optional(),
-  maritalStatus: z.enum(["SINGLE", "MARRIED", "DIVORCED", "WIDOWED"]).optional(),
-  projectType: z.enum(["INDIVIDUAL", "COLLECTIVE"]).optional(),
+  gender: z.enum(["MALE", "FEMALE", "ALL"]),
+
+   maritalStatus: z.array(z.enum(["SINGLE","MARRIED","DIVORCED","WIDOWED"] as const)),
+  projectType: z.enum(["INDIVIDUAL", "COLLECTIVE", "ALL"]),
    sectorIds: z.array(z.string().uuid()).optional(),
    hasDisability: z.boolean().optional(),
   
 })
-const committeeSchema = z
-  .object({
-    id: z.string().uuid(),
-  })
-  .passthrough() // pour accepter les autres champs sans erreur
-  .nullable()
-  .optional()
+
 
 export const createCampaignSchema = z.object({
   
@@ -70,6 +75,8 @@ export const createCampaignSchema = z.object({
 
     type : z.enum(["MONO_PROJECT", "MULTI_PROJECT"]),
      criteria: campaignCriteriaSchema.optional(),
+     isNational : z.boolean(),
+     targetCountry : z.string().optional()
   
 }).refine(
   (data) => {
@@ -88,23 +95,42 @@ export const createCampaignSchema = z.object({
     return true
   },
   { message: "L'âge minimum doit être inférieur à l'âge maximum", path: ["criteria", "maxAge"] }
-);
+).superRefine((data, ctx)=>{
+    if(data.isNational && !data.targetCountry){
+      ctx.addIssue({
+        code : z.ZodIssueCode.custom,
+        message : "Pays cible manquant"
+      })
+    }
+})
 
+
+ const createStepDocumentSchema = z.object({
+ id : z.string().uuid().optional(),
+ stepId : z.string().uuid().optional(),
+
+  name : z.string()
+  .min(2, "Entrez le nom du ducument"),
+
+  isRequired : z.boolean()
+})
 
 
 
 export const createCampaignStepsSchema = z.object({ 
  name : z.string({
-  error : (iss) => iss.input === undefined ? "Le nom du step est requis" : "Champ invalide"
+  error : (iss) => iss.input === undefined ? "Le nom de l'étape est requis" : "Champ invalide"
  }),
 
   order : z.number().positive({
-    error : (iss) => iss.input === undefined ? "L'order est requis" : "Champ order invalide"
+    error : (iss) => iss.input === undefined ? "L'ordre est requis" : "Champ order invalide"
   }),
 
   campaignId : z.string().uuid(), 
 
   setsProjectStatus: z.enum(PROJECT_STATUSES).optional(),
+
+  documents : z.array(createStepDocumentSchema).optional(),
 
   committeeId: z.string().uuid().optional()
 
@@ -113,6 +139,7 @@ export const createCampaignStepsSchema = z.object({
 
 export const updateCampaignStepSchema = z
   .object({
+
     name: z.string().min(1).optional(),
 
     order: z.number().int().positive().optional(),
@@ -149,6 +176,7 @@ export const updateCampaignStepsSchema = z.array(
       .optional()
       .nullable(),
     committeeId: z.string().uuid().optional(),
+    document : z.array(createStepDocumentSchema)
   })
 )
 

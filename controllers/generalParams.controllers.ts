@@ -26,7 +26,7 @@ export const getParams = asyncHandler(async (req: Request, res: Response) => {
 // PATCH /params
 export const updateParams = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!["ADMIN", "SUPER_ADMIN"].includes(req.user?.role ?? "")) {
-    res.status(403)
+    res.status(401)
     throw new Error("Accès refusé")
   }
 

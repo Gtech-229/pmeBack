@@ -16,8 +16,14 @@ import adminsnRoutes from './routes/admin.routes'
 import sectorsRoutes from './routes/sector.routes'
 import paramsRoutes from './routes/generalParams.routes'
 import committeeMembersRoutes from './routes/committeeMembers.routes'
+import stepsRoutes from './routes/campaignSteps.routes'
+import creditRoutes from './routes/credits.routes'
 import committeeMeetingsRoutes from './routes/committeeMeetings.routes'
+import financialEntriesRoutes from './routes/financialEntries.routes'
+import disbursementRoutes from './routes/disbursement.routes'
+import generalStatisticsRoutes from './routes/statistics.routes'
 import { createRateLimiter } from "./middlewares/ratelimit";
+
 // Initialisations
 dotenv.config()
 const port = process.env.PORT || 3000
@@ -32,7 +38,7 @@ app.use(cookieParser());
 
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? ["https://suivi-mp.com", "https://admin.suivi-mp.com"]
-  : ["http://localhost:3000", "http://localhost:8081", "http://192.168.1.199:8081"];
+  : ["http://localhost:3000", "http://localhost:8081", "http://192.168.1.200:8081"];
 
 app.use(cors({
   origin: function(origin, callback){
@@ -53,6 +59,7 @@ app.use(createRateLimiter(1000, 15));
 app.use("/api/auth", authRoutes)
 app.use("/api/users", userRoutes)
 app.use("/api/projects",projectsRoutes);
+app.use("/api/projects/:projectId/financial-entries",financialEntriesRoutes);
 app.use('/api/onboarding/pme',pmeRoutes)
 app.use("/api/activities",activitiesRoutes);
 app.use("/api/committee",committeeRoutes);
@@ -62,7 +69,11 @@ app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/campaign", campaignRoutes);
 app.use("/api/admin", adminsnRoutes);
 app.use("/api/sectors", sectorsRoutes);
+app.use("/api/campaign", stepsRoutes);
 app.use("/api/params", paramsRoutes);
+app.use("/api/credits/:creditId", creditRoutes);
+app.use("/api/disbursements/:id", disbursementRoutes);
+app.use("/api/statistics/campaigns", generalStatisticsRoutes);
 
 
 app.use(errorHandler);

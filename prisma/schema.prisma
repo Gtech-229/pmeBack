@@ -125,9 +125,9 @@ model Project {
   pmeId               String
   status              ProjectStatus @default(pending)
   requestedAmount     Float
-  fundedAmount        Float?
+
   type                ProjectType
-  fundDisbursementDates DateTime[]
+
    documents              Document[]
   currentStepOrder   Int?
   stepProgress           ProjectStepProgress[]
@@ -136,10 +136,12 @@ model Project {
   statusHistory ProjectStatusHistory[]
  hasCredit        Boolean
  meetingProject      MeetingProjectDecision[]
+financialEntries FinancialEntry[]
   campaignId    String
   campaign      Campaign @relation(fields: [campaignId], references: [id] ,onDelete: Cascade)
    sectorId    String?
   sector      Sector?   @relation(fields: [sectorId], references: [id])
+   disbursements    FundDisbursement[]
   createdAt           DateTime    @default(now())
   updatedAt           DateTime    @updatedAt
   @@index([status])
@@ -147,6 +149,24 @@ model Project {
   @@index([campaignId, pmeId])
 
 
+}
+
+model FundDisbursement {
+  id          String                  @id @default(uuid())
+  projectId   String
+  project     Project                 @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  decisionId  String
+  decision    MeetingProjectDecision  @relation(fields: [decisionId], references: [id])
+  amount      Float
+  plannedDate DateTime
+  actualDate  DateTime?
+  isDisbursed Boolean                 @default(false)
+  note        String?
+  createdAt   DateTime                @default(now())
+  updatedAt   DateTime                @updatedAt
+
+  @@index([projectId])
+  @@index([decisionId])
 }
 
 model Promoter {
@@ -212,7 +232,7 @@ model Document {
   id          String   @id @default(uuid())
 
   // Métadonnées
-  title       String
+  label       String
   fileUrl     String
   publicId    String
   mimeType    String?
@@ -261,6 +281,8 @@ model Campaign {
   steps       CampaignStep[]
  projects      Project[]
  targetProjects Int? 
+ isNational      Boolean @default(false)
+ targetCountry  String ?
  type     CampaignType  @default(MONO_PROJECT)
   criteria      CampaignCriteria?
   createdAt   DateTime        @default(now())
@@ -286,7 +308,7 @@ model CampaignStep {
   committee   Committee?    
 
   setsProjectStatus   ProjectStatus?   
- 
+  documents     CampaignStepDocument[]
   createdAt   DateTime @default(now())
   projectSteps ProjectStepProgress[]
 
@@ -294,6 +316,18 @@ model CampaignStep {
   @@unique([campaignId, setsProjectStatus])
 
   @@index([campaignId]) 
+}
+
+model CampaignStepDocument {
+  id         String       @id @default(uuid())
+  stepId     String
+  step       CampaignStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+
+  name       String
+  isRequired Boolean      @default(false)
+  createdAt  DateTime     @default(now())
+
+  @@index([stepId])
 }
 
 model CampaignCriteria {
@@ -305,10 +339,10 @@ model CampaignCriteria {
   minAge        Int?
   maxAge        Int?
   hasDisability Boolean?
-  gender        Gender?
-  maritalStatus MaritalStatus?
+  gender        Gender
+  maritalStatus MaritalStatus[]
   sectors CampaignCriteriaSector[]
-  projectType   ProjectType?
+  projectType   ProjectType
   
 
   createdAt     DateTime @default(now())
@@ -400,6 +434,8 @@ model CommitteeMeeting {
   presences    MeetingPresence[]
   report       MeetingReport?
 
+ 
+
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -449,6 +485,8 @@ model MeetingProjectDecision {
 
   decision    CommitteeDecision
   note        String?
+  tranchesPayload Json? 
+  disbursements   FundDisbursement[]
 
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -475,12 +513,25 @@ model ReportDocument {
 
   reportId  String
   report    MeetingReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
-
+  size      Int
   label     String
   fileUrl   String
   publicId  String
+  mimeType  String ?
 
   createdAt DateTime @default(now())
+}
+
+model CreditRepayment {
+  id              String        @id @default(uuid())
+  creditId        String
+  credit          ProjectCredit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+  amountPaid      Float
+  paidAt          DateTime
+  remainingAfter  Float         
+  isLate          Boolean       @default(false) 
+  note            String?
+  createdAt       DateTime      @default(now())
 }
 
 
@@ -489,23 +540,26 @@ model ReportDocument {
 
 
 model ProjectCredit {
-  id               String   @id @default(uuid())
-  borrower   String
-
-  amount           Float
+  id               String             @id @default(uuid())
+  borrower         String
+  amount           Float             
   interestRate     Float
-  monthlyPayment   Float
-  remainingBalance Float
-  dueDate          DateTime
-
+  durationMonths   Int                
+  monthlyPayment   Float              
+  remainingBalance Float              
+  startDate        DateTime
+  endDate          DateTime           
+  status           CreditStatus       @default(ACTIVE)
   projectId        String
-  project          Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
-
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  project          Project            @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  repayments       CreditRepayment[]
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   @@index([projectId])
 }
+
+
 
 
 model GeneralParams {
@@ -520,6 +574,30 @@ model GeneralParams {
   website     String?
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+}
+
+
+
+model FinancialEntry {
+  id           String        @id @default(uuid())
+  projectId    String
+  project      Project       @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  type         FinancialType
+  category     String
+  label        String
+  amount       Float
+  date         DateTime
+  note         String?
+  documentUrl  String?
+  publicId     String?
+  documentName String?
+  mimeType     String?
+  size         Int?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  @@index([projectId])
+  @@index([type])
 }
 
 
@@ -558,6 +636,7 @@ enum ReportStatus {
 enum PMESize {
   small
   middle
+  very_small
 }
 
 enum PMEType {
@@ -592,7 +671,7 @@ enum CampaignStatus {
 enum Gender {
   MALE
   FEMALE
-  OTHER
+  ALL
 }
 
 enum MaritalStatus {
@@ -605,6 +684,7 @@ enum MaritalStatus {
 enum ProjectType {
   INDIVIDUAL
   COLLECTIVE
+  ALL
 }
 
 
@@ -632,6 +712,18 @@ enum ProjectStatus {
 enum CampaignType {
   MULTI_PROJECT
   MONO_PROJECT
+}
+
+enum CreditStatus {
+  ACTIVE      
+  COMPLETED  
+  DEFAULTED   
+  RESTRUCTURED 
+}
+
+enum FinancialType {
+  INCOME
+  EXPENSE
 }
 
 

@@ -8,6 +8,7 @@ import { uploadToCloudinary } from "../utils/UploadToCloudinary";
 import { Prisma } from "../generated/prisma/client";
 import { createPMESchema } from "./pme.controllers";
 import { createProjectBodySchema } from "../schemas/project.schema";
+import { computeCreditDetails } from "../utils/functions";
 
 /**
  * @description Admin creates a PME for a user
@@ -121,7 +122,7 @@ import { createProjectBodySchema } from "../schemas/project.schema";
 export const adminCreateProject = asyncHandler(async (req: AuthRequest, res: Response) => {
   /* ---------------- AUTH ---------------- */
   if (!req.user?.id || !["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
-    res.status(403)
+    res.status(401)
     throw new Error("Accès refusé")
   }
 
@@ -360,16 +361,34 @@ if (campaign.type === "MONO_PROJECT") {
   /* ---------------- CREDITS ---------------- */
   if (credits && Array.isArray(credits) && credits.length > 0) {
     await prisma.projectCredit.createMany({
-      data: credits.map((c) => ({
-        borrower: c.borrower,
-        amount: Number(c.amount),
-        interestRate: Number(c.interestRate),
-        monthlyPayment: Number(c.monthlyPayment),
-        dueDate: new Date(c.dueDate),
-        remainingBalance: Number(c.remainingBalance),
-        projectId: result.project.id
-      }))
-    })
+       data: credits.map((c) => {
+         const amount = Number(c.amount)
+         const interestRate = Number(c.interestRate)
+         const durationMonths = Number(c.durationMonths)
+         const remainingBalance = Number(c.remainingBalance)
+         const startDate = new Date(c.startDate)
+   
+         const { monthlyPayment, endDate } = computeCreditDetails({
+           amount,
+           interestRate,
+           durationMonths,
+           startDate,
+         })
+   
+         return {
+           borrower: c.borrower,
+           amount,
+           interestRate,
+           durationMonths,
+           monthlyPayment,        
+           remainingBalance,      
+           startDate,
+           endDate,               
+           status: remainingBalance === 0 ? "COMPLETED" : "ACTIVE",
+           projectId: result.project.id,
+         }
+       })
+     })
   }
 
   /* ---------------- DOCUMENTS ---------------- */
@@ -383,7 +402,7 @@ if (campaign.type === "MONO_PROJECT") {
 
     await prisma.document.create({
       data: {
-        title: label,
+        label,
         fileUrl: uploadResult.url,
         publicId: uploadResult.publicId,
         mimeType: file.mimetype,

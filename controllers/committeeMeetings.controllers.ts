@@ -1,7 +1,7 @@
 import { AuthRequest, ProjectStatus } from "types"
 import asyncHandler from "express-async-handler"
 import { Response } from "express"
-import { createCommitteeMeetingSchema, updateMeetingSchema } from "../schemas/committee.schema"
+import { createCommitteeMeetingSchema, FundDisbursementTrancheInput, generatePresenceListSchema, updateMeetingSchema } from "../schemas/committee.schema"
 import { prisma } from "../lib/prisma"
 import { createMeetingReportSchema } from "../schemas/committee.schema"
 import { combineDateAndTime } from "../utils/combinateDateAndHour"
@@ -11,6 +11,10 @@ import { sendEmail } from "../utils/sendEmail"
 import { newStepValidatedMessage } from "../utils/templates/emails/projectvalidated.message"
 import { stepNotValidatedMessage } from "../utils/templates/emails/stepNotValidated.message"
 import { formatDate } from "../utils/functions"
+import { PresenceFileData } from "../types/committeeMeeting.dto"
+import { generateMeetingReport } from "../utils/generateMeetingList"
+import { Prisma } from "../generated/prisma/client"
+import { JsonNull } from "@prisma/client/runtime/client"
 
 
 /**
@@ -23,7 +27,7 @@ export const createMeeting = asyncHandler(
   async (req: AuthRequest, res: Response) => {
 
     if (!req.user || !["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
-      res.status(403)
+      res.status(401)
       throw new Error("Unauthorized")
     }
 
@@ -194,7 +198,10 @@ export const getMeetingDetails = asyncHandler(
               include : {
                 project : true
               }
-            }
+            },
+
+            documents : true
+
           },
           
         },
@@ -371,7 +378,7 @@ export const addMeetingReport = asyncHandler(
   async (req: AuthRequest, res: Response) => {
 
     if (!req.user || !["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
-      res.status(403)
+      res.status(401)
       throw new Error("Unauthorized")
     }
 
@@ -383,10 +390,14 @@ export const addMeetingReport = asyncHandler(
       throw new Error("Meeting id is required")
     }
 
+    
+
     const parsedBody = {
   ...req.body,
   projectDecisions: JSON.parse(req.body.projectDecisions)
 }
+
+
 
     const data = createMeetingReportSchema.parse(parsedBody)
    const files = req.files as Express.Multer.File[]
@@ -457,30 +468,30 @@ if(!validMembers){
 
 
 const report =await prisma.$transaction(async (tx) => {
-  const report = await tx.meetingReport.create({
-    data: {
-      meetingId: meeting.id,
-      otherDecisions: data.otherDecisions ?? "",
-      status: "DRAFT",
-       projectDecisions : {
-        create : data.projectDecisions.map(pd => ({
-      
-          project : {
-            connect : {
-              id : pd.projectId
-            }
-          },
-          note : pd.note ?? '',
-          decision : pd.decision,
-          
-          
+ const report = await tx.meetingReport.create({
+  data: {
+    meetingId: meeting.id,
+    otherDecisions: data.otherDecisions ?? "",
+    status: "DRAFT",
+    ...(data.projectDecisions && data.projectDecisions.length > 0 && {
+      projectDecisions: {
+        create: data.projectDecisions.map(pd => ({
+          project: { connect: { id: pd.projectId } },
+          note: pd.note ?? '',
+          decision: pd.decision,
+           tranchesPayload: pd.funding?.tranches ?? JsonNull
         }))
-       }
+      }
+    })
+  },
+})
+
+  // ── Disbursement tranches ──
+  const fundingDecisions = data.projectDecisions?.filter(
+    pd => pd.decision === "approved" && pd.funding?.tranches && pd.funding.tranches.length > 0
+  ) ?? []
 
 
-
-    },
-  })
 
   
 
@@ -517,8 +528,9 @@ const report =await prisma.$transaction(async (tx) => {
       label : label,
       fileUrl : uploadResult.url,
       publicId : uploadResult.publicId,
-     
-     reportId : report.id
+      size : file.size,
+     reportId : report.id,
+     mimeType : file.mimetype
     }
    })
     }
@@ -640,7 +652,7 @@ const updatedSignatures = await prisma.reportSignature.findMany({
  */
 const presentMemberIds = report.meeting.presences.map(p => p.memberId)
 
-// Check every present member has signed — not just count
+// Check every present member has signed 
 const allSigned = presentMemberIds.every(memberId =>
   updatedSignatures.some(s => s.memberId === memberId)
 )
@@ -655,13 +667,14 @@ if (!allSigned) {
 }
 
 /**
- * 🔒 TRANSACTION
+ * TRANSACTION
  * - appliquer le rapport
  * - appliquer toutes les décisions
  */
 
 const decisions = await prisma.meetingProjectDecision.findMany({
   where: { reportId: report.id },
+  
 })
 
 const projects = await Promise.all(
@@ -675,6 +688,7 @@ const projects = await Promise.all(
         },
         pme: true,
         campaign: true,
+        
       },
     })
   )
@@ -712,29 +726,29 @@ for (const decision of decisions) {
   let nextStepOrder: number | null = null
   let nextStepId: string | null = null
 
- if (isApproved) {
-  // Always try to find next step regardless of setsProjectStatus
+if (isApproved) {
   const nextStep = project.stepProgress.find(
     s => s.campaignStep.order === currentStep.campaignStep.order + 1
   )
 
   if (currentStep.campaignStep.setsProjectStatus) {
-    // Set the global status
     newProjectStatus = currentStep.campaignStep.setsProjectStatus
   }
 
-  if (nextStep) {
   
-    nextStepOrder = nextStep.campaignStep.order
+
+  if (nextStep) {
+    nextStepOrder = nextStep.campaignStep.order // ← always set
     nextStepId = nextStep.id
   } else {
-   
     if (!newProjectStatus) {
       newProjectStatus = 'completed'
     }
+    nextStepOrder = null // ← explicitly null when no next step
   }
 } else {
   newProjectStatus = 'rejected'
+  nextStepOrder = null
 }
 
   writeOps.push({
@@ -772,6 +786,24 @@ await prisma.$transaction(
         },
       })
 
+      // when newProjectStatus === 'funded'
+if (op.newProjectStatus === 'funded') {
+  const tranchesPayload = op.decision.tranchesPayload as FundDisbursementTrancheInput[] | null
+  
+  if (tranchesPayload && tranchesPayload.length > 0) {
+    await tx.fundDisbursement.createMany({
+      data: tranchesPayload.map(t => ({
+        projectId: op.projectId,
+        decisionId: op.decision.id,
+        amount: Number(t.amount),
+        plannedDate: new Date(t.plannedDate),
+        note: t.note ?? null,
+        isDisbursed: false,
+      }))
+    })
+  }
+}
+
       // Activate next step
       if (op.nextStepId) {
         await tx.projectStepProgress.update({
@@ -782,24 +814,29 @@ await prisma.$transaction(
 
       // Update project status
       if (op.newProjectStatus) {
-        await tx.project.update({
-          where: { id: op.projectId },
-          data: {
-            status: op.newProjectStatus,
-            currentStepOrder:
-              op.newProjectStatus === 'completed'
-                ? null
-                : op.newProjectStatus === 'approved' ? op.nextStepOrder : op.currentStepOrder,
-          },
-        })
+       await tx.project.update({
+            where: { id: op.projectId },
+            data: {
+              // always update currentStepOrder when approved
+              ...(op.isApproved && {
+                currentStepOrder: op.nextStepOrder ?? null
+              }),
+              // only update status when explicitly set
+              ...(op.newProjectStatus && {
+                status: op.newProjectStatus,
+              }),
+            },
+          })
 
-        await tx.projectStatusHistory.create({
-          data: {
-            projectId: op.projectId,
-            status: op.newProjectStatus,
-            changedAt: new Date(),
-          },
-        })
+                if (op.newProjectStatus) {
+              await tx.projectStatusHistory.create({
+                data: {
+                  projectId: op.projectId,
+                  status: op.newProjectStatus,
+                  changedAt: new Date(),
+                },
+              })
+            }
       }
 
       // Activity
@@ -855,5 +892,86 @@ res.status(200).json({
   message: 'Report signed and applied successfully',
   isApplied: true,
 })
+
+})
+
+
+
+/**
+ * @description Generate a meeting presence list
+ * @route    POST /committee/meetings/:meetingId/generateAttendance
+ * @access  Committee secretary
+ * **/ 
+export const generatePresenceList = asyncHandler(async(req : AuthRequest, res :Response) =>{
+   if(!req.user?.id || !["ADMIN","SUPER_ADMIN"].includes(req.user?.role)){
+    res.status(401)
+    throw new Error("Unauthorized")
+   }
+
+const {meetingId} = req.params
+
+if(!meetingId){
+  res.status(400);
+  throw new Error("Id de la reunion non specifiée")
+}
+
+const meeting = await prisma.committeeMeeting.findFirst({
+  where: {
+    id: meetingId,
+    committee: {
+      members: {
+        some: {
+          userId: req.user.id,
+          memberRole: "secretary"
+        }
+      }
+    },
+    status : 'ONGOING'
+  },
+  include: {
+    committee: {include : {members : {include : {user : true}}, campaign : true}},
+    
+   
+  }
+})
+
+if (!meeting) {
+  res.status(404)
+  throw new Error("Réunion introuvable ou accès non autorisé")
+}
+
+
+const parsed = generatePresenceListSchema.safeParse(req.body)
+
+if(!parsed.success){
+  res.status(400)
+  throw parsed.error
+  
+}
+
+
+
+const members = meeting.committee.members.filter(m => parsed.data.presentMemberIds.includes(m.id))
+
+
+
+
+
+
+const data: PresenceFileData = {
+    presentMembers: members.map(m => ({
+      id: m.id,
+      role: m.memberRole,
+      firstName: m.user.firstName,
+      lastName: m.user.lastName,
+    })),
+    meetingData: {id : meeting.id, startTime : meeting.startTime, endTime : meeting.endTime, location : meeting.location, committee : meeting.committee, date : meeting.date} // already includes committee + campaign from your include
+  }
+
+  const pdfBuffer = await generateMeetingReport(data, )
+
+  res.setHeader('Content-Type', 'application/pdf')
+  res.setHeader('Content-Disposition', `attachment; filename="presence-${meeting.id}.pdf"`)
+  res.send(pdfBuffer)
 
 })

@@ -1,0 +1,488 @@
+"use strict";
+var __importDefault = (this && this.__importDefault) || function (mod) {
+    return (mod && mod.__esModule) ? mod : { "default": mod };
+};
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.verifyCode = exports.sendCode = exports.newPassword = exports.resetPassword = exports.changePassword = exports.refreshToken = exports.getMe = exports.logout = exports.login = void 0;
+const express_async_handler_1 = __importDefault(require("express-async-handler"));
+const prisma_1 = require("../lib/prisma");
+const password_1 = require("../utils/password");
+const auth_1 = require("../utils/auth");
+const user_schemas_1 = require("../schemas/user.schemas");
+const bcryptjs_1 = __importDefault(require("bcryptjs"));
+const sendEmail_1 = require("../utils/sendEmail");
+const generateCode_1 = require("../utils/generateCode");
+const resetPassword_template_1 = require("../utils/templates/emails/resetPassword.template");
+const accountValidation_template_1 = require("../utils/templates/emails/accountValidation.template");
+const cookiesOptions_1 = require("../utils/cookiesOptions");
+/**
+ * @desc    Login user
+ * @route   POST /api/auth/login
+ * @access  Public
+ */
+exports.login = (0, express_async_handler_1.default)(async (req, res) => {
+    const isProd = process.env.NODE_ENV === "production";
+    const parsed = user_schemas_1.loginSchema.parse(req.body);
+    const { email, password } = parsed;
+    if (!email || !password) {
+        res.status(400);
+        throw new Error("Email and password are required");
+    }
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { email }
+    });
+    if (!user || !(await (0, password_1.comparePassword)(password, user.passwordHash))) {
+        res.status(404);
+        throw new Error("Email ou mot de passe incorrect");
+    }
+    // Generer les tokens
+    const token = (0, auth_1.generateToken)({
+        id: user.id,
+        role: user.role
+    });
+    const refreshTkn = (0, auth_1.generateRefreshToken)(user.id);
+    const hashedToken = await (0, password_1.hashPassword)(refreshTkn);
+    await prisma_1.prisma.refreshToken.create({
+        data: {
+            token: hashedToken,
+            userId: user.id,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) // 7 days
+        }
+    });
+    // Set refresh token in httpOnly cookie
+    res.cookie("refreshToken", refreshTkn, (0, cookiesOptions_1.getCookieOptions)(7 * 24 * 60 * 60 * 1000));
+    res.cookie("jwt", token, (0, cookiesOptions_1.getCookieOptions)(15 * 60 * 1000));
+    // In login controller alongside your other cookies
+    res.cookie("hasSession", "1", {
+        httpOnly: false,
+        secure: isProd,
+        sameSite: isProd ? "none" : "lax",
+        ...(isProd && { domain: ".suivi-mp.com" }),
+        maxAge: 7 * 24 * 60 * 60 * 1000
+    });
+    if (req.headers['x-client-type'] === "mobile") {
+        res.status(200).json({ token, refreshToken: refreshTkn });
+    }
+    else {
+        res.status(200).json({ token });
+    }
+});
+/**
+ * @desc    Logout user
+ * @route   POST /api/auth/logout
+ * @access  Private
+ */
+exports.logout = (0, express_async_handler_1.default)(async (req, res) => {
+    if (!req.user?.id) {
+        res.status(401);
+        throw new Error('You must be connected');
+    }
+    const refreshTokenPlain = req.cookies.refreshToken;
+    if (!refreshTokenPlain) {
+        res.status(401);
+        throw new Error('User not authentificated');
+    }
+    const tokens = await prisma_1.prisma.refreshToken.findMany({
+        where: {
+            revokedAt: null,
+            expiresAt: { gt: new Date() }
+        }
+    });
+    for (const token of tokens) {
+        const isMatch = await (0, password_1.comparePassword)(refreshTokenPlain, token.token);
+        if (isMatch) {
+            await prisma_1.prisma.refreshToken.update({
+                where: { id: token.id },
+                data: { revokedAt: new Date() }
+            });
+            break;
+        }
+    }
+    await prisma_1.prisma.user.update({
+        where: { id: req.user.id },
+        data: {
+            lastLoginAt: new Date()
+        }
+    });
+    // Supprimer les cookies
+    res.clearCookie("refreshToken", (0, cookiesOptions_1.clearCookieOptions)());
+    res.clearCookie("hasSession", (0, cookiesOptions_1.clearSessionCookieOptions)());
+    res.clearCookie("jwt", (0, cookiesOptions_1.clearCookieOptions)());
+    res.status(200).json({ message: "Logged out successfully" });
+});
+/**
+ * @desc    Get personal infos
+ * @route   GET /api/auth/me
+ * @access  Private
+ */
+exports.getMe = (0, express_async_handler_1.default)(async (req, res) => {
+    if (!req.user?.id) {
+        res.status(401);
+        throw new Error("Not authenticated");
+    }
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: req.user.id },
+        select: {
+            pme: {
+                include: {
+                    projects: {
+                        include: {
+                            statusHistory: true,
+                            stepProgress: {
+                                include: {
+                                    campaignStep: true
+                                }
+                            },
+                            campaign: { include: { steps: true } },
+                            sector: true
+                        }
+                    },
+                    promoter: true
+                }
+            },
+            id: true,
+            email: true,
+            firstName: true,
+            lastName: true,
+            role: true,
+            isActive: true,
+            lastLoginAt: true,
+            codeIsVerified: true,
+            activity: true,
+            createdAt: true
+        }
+    });
+    if (!user) {
+        res.status(404);
+        throw new Error("User not found");
+    }
+    res.status(200).json({
+        ...user,
+        openCampaigns: await prisma_1.prisma.campaign.findMany({
+            where: { status: "OPEN" },
+            select: {
+                id: true,
+                name: true,
+                description: true,
+                start_date: true,
+                end_date: true,
+                targetProjects: true,
+                status: true,
+                steps: { include: { projectSteps: true } },
+                type: true,
+                criteria: {
+                    include: {
+                        sectors: { include: { sector: true } }
+                    }
+                }
+            }
+        })
+    });
+});
+const REFRESH_SECRET = process.env.REFRESH_SECRET;
+/**
+ * @desc    Refresh access token
+ * @route   POST /api/auth/refresh
+ * @access  Public (via refresh token cookie)
+ */
+exports.refreshToken = (0, express_async_handler_1.default)(async (req, res) => {
+    const refreshTokenPlain = req.cookies?.refreshToken || req.body.refreshToken;
+    if (!req.userId) {
+        throw new Error('No user');
+    }
+    if (!refreshTokenPlain) {
+        res.status(401);
+        throw new Error("Refresh token missing");
+    }
+    const storedTokens = await prisma_1.prisma.refreshToken.findMany({
+        where: {
+            userId: req.userId,
+            revokedAt: null,
+            expiresAt: { gt: new Date() }
+        }
+    });
+    let matchedToken = null;
+    for (const token of storedTokens) {
+        const isMatch = await (0, password_1.comparePassword)(refreshTokenPlain, token.token);
+        if (isMatch) {
+            matchedToken = token;
+            break;
+        }
+    }
+    if (!matchedToken) {
+        res.status(403);
+        throw new Error("Refresh token not recognized");
+    }
+    // ─── Atomic revoke — race condition safe ──────────────────────────────
+    const revoked = await prisma_1.prisma.refreshToken.updateMany({
+        where: { id: matchedToken.id, revokedAt: null },
+        data: { revokedAt: new Date() }
+    });
+    // Lost the race — winner already issued new tokens, return 200 silently
+    if (revoked.count === 0) {
+        res.status(200).json({ message: "Token already refreshed" });
+        return;
+    }
+    // ─── Only the winner reaches here ─────────────────────────────────────
+    const user = await prisma_1.prisma.user.findUnique({ where: { id: req.userId } });
+    if (!user) {
+        res.status(401);
+        throw new Error("User not found or inactive");
+    }
+    const newRefreshToken = (0, auth_1.generateRefreshToken)(user.id);
+    const hashedRefreshToken = await (0, password_1.hashPassword)(newRefreshToken);
+    await prisma_1.prisma.refreshToken.create({
+        data: {
+            token: hashedRefreshToken,
+            userId: user.id,
+            expiresAt: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000)
+        }
+    });
+    const accessToken = (0, auth_1.generateToken)({ id: user.id, role: user.role });
+    res.cookie("jwt", accessToken, (0, cookiesOptions_1.getCookieOptions)(15 * 60 * 1000));
+    res.cookie("refreshToken", newRefreshToken, (0, cookiesOptions_1.getCookieOptions)(7 * 24 * 60 * 60 * 1000));
+    res.status(200).json({ message: "Token refreshed" });
+});
+/**
+ * @des Change password
+ * @route POST/auth/change-password
+ * @access Connected Private
+ * **/
+exports.changePassword = (0, express_async_handler_1.default)(async (req, res) => {
+    const userId = req.user?.id;
+    if (!userId) {
+        res.status(401);
+        throw new Error("Unauthorized");
+    }
+    const { currentPassword, newPassword } = req.body;
+    if (!currentPassword || !newPassword) {
+        res.status(400);
+        throw new Error("Both passwords are required");
+    }
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: userId }
+    });
+    if (!user) {
+        res.status(404);
+        throw new Error("User not found");
+    }
+    //  Vérifier l'ancien mot de passe
+    const isMatch = await (0, password_1.comparePassword)(currentPassword, user.passwordHash);
+    if (!isMatch) {
+        res.status(401);
+        throw new Error("Current password is incorrect");
+    }
+    //  Hasher le nouveau mot de passe
+    const newHashedPassword = await (0, password_1.hashPassword)(newPassword);
+    //  Update password
+    await prisma_1.prisma.user.update({
+        where: { id: userId },
+        data: { passwordHash: newHashedPassword }
+    });
+    //  Invalider TOUS les refresh tokens
+    await prisma_1.prisma.refreshToken.updateMany({
+        where: {
+            userId,
+            revokedAt: null
+        },
+        data: {
+            revokedAt: new Date()
+        }
+    });
+    res.status(200).json({
+        message: "Password updated successfully"
+    });
+});
+/**
+ * @des Reset password
+ * @route POST/auth/reset-password
+ * @access Public
+ * **/
+exports.resetPassword = (0, express_async_handler_1.default)(async (req, res) => {
+    const { email } = req.body;
+    if (!email) {
+        res.status(400);
+        throw new Error("Email requis");
+    }
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { email },
+    });
+    // Toujours répondre pareil (anti-enumeration)
+    if (!user) {
+        res.status(200).json({
+            message: "Si un compte existe, un email de réinitialisation a été envoyé",
+        });
+        return;
+    }
+    if (user.resetPasswordToken && user.resetPasswordExpires && user.resetPasswordExpires > new Date()) {
+        const now = new Date();
+        const diffMs = user.resetPasswordExpires.getTime() - now.getTime(); // différence en ms
+        const diffMinutes = Math.ceil(diffMs / 1000 / 60); // convertir en minutes et arrondir vers le haut
+        throw new Error(`Un lien de réinitialisation a été envoyé à votre email. Suivez le ou réessayez dans ${diffMinutes} minute${diffMinutes > 1 ? "s" : ""}.`);
+    }
+    //  Génération token sécurisé
+    const rawToken = crypto.randomUUID().toString();
+    const hashedToken = await (0, password_1.hashPassword)(rawToken);
+    const expires = new Date(Date.now() + 1000 * 60 * 60); //1h
+    await prisma_1.prisma.user.update({
+        where: { id: user.id },
+        data: {
+            resetPasswordToken: hashedToken,
+            resetPasswordExpires: expires,
+        },
+    });
+    const frontendUrl = process.env.NODE_ENV === 'production' ? "https://suivi-mp.com" : "http://localhost:3000";
+    const resetUrl = `${frontendUrl}/reset-password/${rawToken}`;
+    // Email
+    await (0, sendEmail_1.sendEmail)({
+        to: user.email,
+        subject: "Réinitialisation de votre mot de passe",
+        html: await (0, resetPassword_template_1.resetPasswordTemplate)(resetUrl),
+    });
+    res.status(200).json({
+        message: "Si un compte existe, un email de réinitialisation a été envoyé",
+        returnSection: ['ADMIN', 'SUPER_ADMIN'].includes(user.role) ? "admin" : "client"
+    });
+});
+/**
+ * @description Reset the user's password
+ * @Route POST/auth/new-password
+ * @access Private
+ * **/
+exports.newPassword = (0, express_async_handler_1.default)(async (req, res) => {
+    const { token, password } = req.body;
+    if (!token || !password) {
+        res.status(400);
+        throw new Error("Token et nouveau mot de passe sont requis");
+    }
+    // Chercher l'utilisateur correspondant au token et vérifier expiration
+    const users = await prisma_1.prisma.user.findMany({
+        where: {
+            resetPasswordExpires: { gte: new Date() }, // token non expiré
+        },
+    });
+    // Add async and await the comparison
+    const user = await Promise.all(users.map(async (u) => {
+        if (!u.resetPasswordToken)
+            return null;
+        const match = await (0, password_1.comparePassword)(token, u.resetPasswordToken);
+        return match ? u : null;
+    })).then(results => results.find(Boolean));
+    if (!user) {
+        res.status(400);
+        throw new Error("Lien invalide ou expiré");
+    }
+    // Hasher le nouveau mot de passe
+    const hashedPassword = await (0, password_1.hashPassword)(password);
+    // Mettre à jour l'utilisateur : mot de passe + suppression du token
+    await prisma_1.prisma.user.update({
+        where: { id: user.id },
+        data: {
+            passwordHash: hashedPassword,
+            resetPasswordToken: null,
+            resetPasswordExpires: null,
+        },
+    });
+    res.status(200).json({
+        message: "Mot de passe mis à jour avec succès",
+    });
+});
+/**
+ * @description Send verification code
+ * @Route POST/auth/send-code
+ * @access Private
+ * **/
+exports.sendCode = (0, express_async_handler_1.default)(async (req, res) => {
+    if (!req.user?.id) {
+        res.status(401);
+        throw new Error('Not authenticated');
+    }
+    // Récupérer l’utilisateur
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: req.user.id },
+    });
+    if (user?.verificationCode &&
+        user.codeExpires &&
+        user.codeExpires.getTime() > Date.now()) {
+        throw new Error("Saisissez le code qui vous a été envoyé ou réessayez dans 3 minutes");
+    }
+    const { email } = req.body;
+    if (!email) {
+        res.status(400);
+        throw new Error('Email is required');
+    }
+    const code = (0, generateCode_1.generateCode)(6);
+    //  Hasher le code
+    const hashedCode = await bcryptjs_1.default.hash(code, 10);
+    if (!user) {
+        res.status(404);
+        throw new Error('User not found');
+    }
+    //  Définir expiration (3 minutes)
+    const expiresAt = new Date(Date.now() + 3 * 60 * 1000);
+    //  Sauvegarder le code
+    await prisma_1.prisma.user.update({
+        where: { id: user.id },
+        data: {
+            verificationCode: hashedCode,
+            codeExpires: expiresAt,
+            codeIsVerified: false
+        },
+    });
+    // Send resend code
+    await (0, sendEmail_1.sendEmail)({
+        to: `${email}`,
+        subject: "Validation de compte",
+        html: await (0, accountValidation_template_1.accountValidationTemplate)({ userName: user.firstName, code, expiresAt })
+    });
+    // Réponse frontend
+    res.status(200).json({
+        message: 'Verification code sent',
+    });
+});
+/**
+ * @description Verify account validation code
+ * @route POST/auth/verify-code
+ * @access Connected user
+ * **/
+exports.verifyCode = (0, express_async_handler_1.default)(async (req, res) => {
+    if (!req.user?.id) {
+        throw new Error('Utiliisateur non connecté');
+    }
+    const { email, code } = req.body;
+    if (!email || !code) {
+        res.status(400);
+        throw new Error("Email et code requis");
+    }
+    const user = await prisma_1.prisma.user.findUnique({
+        where: { id: req.user?.id },
+    });
+    if (!user || !user.verificationCode || !user.codeExpires) {
+        res.status(400);
+        throw new Error("Code inexistant");
+    }
+    //  Vérification expiration
+    if (user.codeExpires < new Date()) {
+        res.status(400);
+        throw new Error("Code expiré");
+    }
+    //  Hash du code fourni
+    const isMatched = await bcryptjs_1.default.compare(code, user.verificationCode);
+    if (!isMatched) {
+        throw new Error('Code incorrect');
+    }
+    // Validation du compte
+    await prisma_1.prisma.user.update({
+        where: { id: user.id },
+        data: {
+            verificationCode: null,
+            codeIsVerified: true,
+            codeExpires: null,
+        },
+    });
+    res.status(200).json({
+        success: true,
+        message: "Email vérifié avec succès",
+    });
+});
+//# sourceMappingURL=auth.controllers.js.map

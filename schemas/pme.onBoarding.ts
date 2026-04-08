@@ -19,7 +19,7 @@ export const step1Schema = z.object({
     
 
   size: z
-    .enum(["small","middle"],{ error: (iss) => iss.input === undefined ? "Selectionnez une taille " : "Invalid input."}),
+    .enum(["small","middle", "very_small"],{ error: (iss) => iss.input === undefined ? "Selectionnez une taille " : "Invalid input."}),
     
 
   description: z
@@ -108,7 +108,7 @@ export const step2Schema  = z.object({
   })
 
   export const promoterSchema = z.object({
-  gender: z.enum(["MALE", "FEMALE", "OTHER"], {
+  gender: z.enum(["MALE", "FEMALE"], {
     error: (iss) => iss.input === undefined ? "Sélectionnez un genre" : "Invalid input"
   }),
   birthDate: z.string({

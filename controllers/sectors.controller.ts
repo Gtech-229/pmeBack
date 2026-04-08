@@ -10,7 +10,7 @@ import { Response } from "express"
  */
 export const getSectors = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user?.id ) {
-    res.status(403)
+    res.status(401)
     throw new Error("Accès refusé")
   }
 
@@ -29,7 +29,7 @@ export const getSectors = asyncHandler(async (req: AuthRequest, res: Response) =
  */
 export const createSector = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user?.id || !["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
-    res.status(403)
+    res.status(401)
     throw new Error("Accès refusé")
   }
 
@@ -64,7 +64,7 @@ export const createSector = asyncHandler(async (req: AuthRequest, res: Response)
  */
 export const deleteSector = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user?.id || !["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
-    res.status(403)
+    res.status(401)
     throw new Error("Accès refusé")
   }
 

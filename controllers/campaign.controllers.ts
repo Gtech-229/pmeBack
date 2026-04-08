@@ -39,7 +39,7 @@ export const getCampaigns = asyncHandler(async (req: AuthRequest, res: Response)
     criteria: {
       ...(projectType && projectType !== "all" ? { projectType: projectType as ProjectType } : {}),
       ...(gender && gender !== "all" ? { gender: gender as Gender } : {}),
-      ...(maritalStatus && maritalStatus !== "all" ? { maritalStatus: maritalStatus as MaritalStatus } : {}),
+      // ...(maritalStatus && maritalStatus !== "all" ? { maritalStatus: maritalStatus as MaritalStatus } : {}),
       ...(hasDisability !== undefined && hasDisability !== "all" ? { 
         hasDisability: hasDisability === "true" 
       } : {}),
@@ -63,7 +63,7 @@ export const getCampaigns = asyncHandler(async (req: AuthRequest, res: Response)
       take,
       include: {
         steps: {
-          include: { committee: true },
+          include: { committee: true, documents : true },
           
         },
         criteria: {
@@ -101,9 +101,11 @@ export const createCampaign = asyncHandler(
   async (req: AuthRequest, res: Response) => {
 
     if (!req.user?.id || !["ADMIN", "SUPER_ADMIN"].includes(req.user?.role)) {
-      res.status(403)
+      res.status(401)
       throw new Error("Access denied")
     }
+
+
 
    const parsed = createCampaignSchema.parse(req.body)
 if (!parsed) {
@@ -111,7 +113,7 @@ if (!parsed) {
   throw new Error('Invalid datas')
 }
 
-const { name, description, start_date, end_date, status, targetProject, type, criteria } = parsed
+const { name, description, start_date, end_date, status, targetProject, type, criteria, isNational, targetCountry } = parsed
 
 const campaign = await prisma.$transaction(async (tx) => {
   const createdCampaign = await tx.campaign.create({
@@ -123,7 +125,8 @@ const campaign = await prisma.$transaction(async (tx) => {
       status,
       targetProjects: targetProject ? Number(targetProject.replace(/\s/g, '').replace(',', '.')) : null,
       type,
-      
+      isNational,
+      targetCountry : targetCountry ?? null
     },
   })
 
@@ -135,9 +138,9 @@ const campaign = await prisma.$transaction(async (tx) => {
         campaignId: createdCampaign.id,
         minAge: minAge ? Number(minAge) : null,
         maxAge: maxAge ? Number(maxAge) : null,
-        gender: gender ?? null,
-        maritalStatus: maritalStatus ?? null,
-        projectType: projectType ?? null,
+        gender: gender,
+        maritalStatus: maritalStatus as MaritalStatus[] ?? [] ,
+        projectType: projectType,
         hasDisability: criteria.hasDisability ?? null,
       },
     })
@@ -185,7 +188,7 @@ export const getCampaignById = asyncHandler(
 
     // Vérification auth
     if (!req.user) {
-      res.status(403)
+      res.status(401)
       throw new Error("Access denied")
     }
 
@@ -209,13 +212,15 @@ export const getCampaignById = asyncHandler(
             },
 
             meetings : true,
-            step : true
+            step : true,
+            
           }
         },
 
         steps : {
           include : {
-            committee : true
+            committee : true,
+            documents : true
           }
         },
 
@@ -244,294 +249,6 @@ export const getCampaignById = asyncHandler(
 )
 
 
-/**
- * @description Create campaign validation step
- * @route POST /campaign/:campaignId/steps
- * @access Authenticated Admin
- */
-export const createCampaignSteps = asyncHandler(
-  async (req: AuthRequest, res: Response) => {
-    const parsed = createCampaignStepsSchema.safeParse(req.body)
-
-    if (!parsed.success) {
-      res.status(400)
-      throw parsed.error
-    }
-
-    const { order, name, campaignId, setsProjectStatus, committeeId } =
-      parsed.data
-
-    if (!req.user) {
-      res.status(403)
-      throw new Error("Access denied")
-    }
-
-    
-
-    //  transaction 
-    const step = await prisma.$transaction(async (tx) => {
-     
-     //  vérifier campagne
-      const campaign = await tx.campaign.findUnique({
-        where: { id: campaignId },
-      })
-
-      if (!campaign) {
-        res.status(404)
-        throw new Error("Campaign not found")
-      }
-
-      //  Verifier impact global
-      if (setsProjectStatus) {
-  const existingStatus = await tx.campaignStep.findFirst({
-    where: {
-      campaignId,
-      setsProjectStatus,
-    },
-    select: { id: true },
-  })
-
-  if (existingStatus) {
-    res.status(409)
-    throw new Error(
-      "Une étape avec le meme impact exist deja dans la campagne ."
-    )
-  }
-}
-
-      //  vérifier unicité order
-      const existingStep = await tx.campaignStep.findFirst({
-        where: { campaignId, order },
-      })
-
-      if (existingStep) {
-        res.status(409)
-        throw new Error("Une étape existe déjà avec cet ordre")
-      }
-
-      //  vérifier comité si fourni
-      if (committeeId) {
-        const committee = await tx.committee.findUnique({
-          where: { id: committeeId },
-          select: { id: true, stepId: true },
-        })
-
-        if (!committee) {
-          res.status(404)
-          throw new Error("Comité introuvable")
-        }
-
-        if (committee.stepId) {
-          res.status(409)
-          throw new Error("Ce comité est déjà assigné à une autre étape")
-        }
-      }
-
-      //  créer la step
-      const createdStep = await tx.campaignStep.create({
-        data: {
-          name,
-          order,
-          campaignId,
-          setsProjectStatus: setsProjectStatus ?? null,
-        },
-      })
-
-      //  attacher le comité si présent
-      if (committeeId) {
-        await tx.committee.update({
-          where: { id: committeeId },
-          data: { stepId: createdStep.id },
-        })
-      }
-
-      return createdStep
-    })
-
-    res.status(201).json(step)
-  }
-)
-
-
-
-/**
- * @description Delete a campaign validation step
- * @route DELETE /campaign/:campaignId/steps/:id
- * @access Authenticated Admin
- */
-export const deleteCampaignStep = asyncHandler(
-  async (req: AuthRequest, res: Response) => {
-
-    const { campaignId, stepId } = req.params
-
-    if (!req.user) {
-      res.status(403)
-      throw new Error("Access denied")
-    }
-
-    if (!campaignId || !stepId) {
-      res.status(400)
-      throw new Error("Missing campaign id or step id")
-    }
-
-    // Vérifier que la campagne existe
-    const campaign = await prisma.campaign.findUnique({
-      where: { id: campaignId }
-    })
-
-    if (!campaign) {
-      res.status(404)
-      throw new Error("Campaign not found")
-    }
-
-    // Vérifier que l’étape existe et appartient à la campagne
-    const step = await prisma.campaignStep.findFirst({
-      where: {
-        id : stepId,
-        campaignId
-      }
-    })
-
-    if (!step) {
-      res.status(404)
-      throw new Error("Step not found for this campaign")
-    }
-
-   
-    const linkedCommittee = await prisma.committee.findUnique({
-      where: {
-        stepId: stepId
-      }
-    })
-
-    if (linkedCommittee) {
-      res.status(409)
-      throw new Error(
-        "Impossible de supprimer une étape déjà assignée à un comité"
-      )
-    }
-
-    // Suppression de l’étape
-    await prisma.campaignStep.delete({
-      where: { id : stepId }
-    })
-
-    res.status(200).json("Deleted successfully")
-  }
-)
-
-/**
- * @description Update a campaign validation step
- * @route PUT /campaign/:campaignId/steps
- * @access Authenticated Admin
- */
-
-export const updateCampaignStep = asyncHandler(
-  async (req: AuthRequest, res: Response) => {
-  
-    const { campaignId } = req.params
-
-    if (!campaignId) {
-      res.status(400)
-      throw new Error("L'id de la campagne est manquant")
-    }
-
-    const parsed = updateCampaignStepsSchema.safeParse(req.body)
-
-    if (!parsed.success) {
-      res.status(400)
-      throw new Error("Payload invalide")
-    }
-
-    const steps = parsed.data
-
- // Detacher les comites 
-for (const step of steps) {
-  await prisma.committee.updateMany({
-    where: { stepId: step.id },
-    data: { stepId: null },
-  })
-  // Attacher a nouveau les vouveles steps aux comites
-  if (step.committeeId) {
-    await prisma.committee.update({
-      where: { id: step.committeeId },
-      data: { stepId: step.id },
-    })
-  }
-}
-
-// ── Transaction  ──
-await prisma.$transaction(async (tx) => {
-  // Phase 1 — neutralize orders
-  await Promise.all(
-    steps.map(step =>
-      tx.campaignStep.update({
-        where: { id: step.id },
-        data: { order: step.order + 1000 },
-      })
-    )
-  )
-
-  // Phase 2 — apply real values
-  await Promise.all(
-    steps.map(step =>
-      tx.campaignStep.update({
-        where: { id: step.id },
-        data: {
-          name: step.name,
-          order: step.order,
-          setsProjectStatus: step.setsProjectStatus ?? null,
-        },
-      })
-    )
-  )
-}, { timeout: 30000 })
-
-res.status(200).json({ success: true, message: "Étapes mises à jour avec succès" })
-  }
-)
-
-
-
-/**
- * @description Get campaign progression steps
- * @route GET /campaign/:campaignId/steps
- * @access Authenticated Admin
- */
-
-export const getCampaignSteps = asyncHandler(
-  async (req: AuthRequest, res: Response) => {
-    const { campaignId } = req.params
-   if(!campaignId) {
-    res.status(400)
-    throw new Error("Id de la campagne requise")
-   }
-    if (!req.user) {
-      res.status(403)
-      throw new Error("Access denied")
-    }
-
-    const campaignWithSteps = await prisma.campaign.findUnique({
-      where: { id: campaignId },
-      include: {
-        steps: {
-          include : {
-             committee : true
-          },
-          orderBy: { order: "asc" },
-        },
-      },
-    })
-
-    if (!campaignWithSteps) {
-      res.status(404)
-      throw new Error("Campaign not found")
-    }
-
-    res.status(200).json(campaignWithSteps.steps)
-  }
-)
-
 
 
 /**
@@ -546,7 +263,7 @@ export const updateCampaign = asyncHandler(
     const { name, description, status, targetProjects } = req.body
 
     if (!req.user) {
-      res.status(403)
+      res.status(401)
       throw new Error("Access denied")
     }
 
@@ -604,7 +321,7 @@ export const updateCampaign = asyncHandler(
  */
 export const deleteCampaign = asyncHandler(async (req: AuthRequest, res: Response) => {
   if (!req.user?.id || !["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
-    res.status(403)
+    res.status(401)
     throw new Error("Accès refusé")
   }
 

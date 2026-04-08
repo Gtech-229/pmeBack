@@ -12,7 +12,8 @@ export const uploadToCloudinary = (
 ): Promise<CloudinaryUploadResult> => {
   return new Promise((resolve, reject) => {
       const options: any = {
-      resource_type: 'auto'
+      resource_type: 'auto',
+       type: "upload"
     }
 
     if (folder) {

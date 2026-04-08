@@ -81,10 +81,43 @@ export type Project = {
   status: ProjectStatus;    // état global du projet
   requestedAmount: number;  // montant total demandé
   fundedAmount?: number;    // montant déjà débloqué
-  fundDisbursementDates?: Date[]; // dates des tranches de fonds débloquées
+ 
   validatedAt?: Date;       // date de validation finale par l'ensemble des responsables
   validatedBy?: UserSummary[]; // administrateurs ou financeurs ayant validé le projet
   subSteps: ProjectSubStep[];   // suivi des sous-étapes après mise à disposition des fonds
   createdAt: Date;
   updatedAt: Date;
 };
+
+
+export type CreditComputationInput = {
+  amount: number
+  interestRate: number // en %
+  durationMonths: number
+  startDate: string | Date
+}
+
+export type CreditComputationResult = {
+  monthlyPayment: number
+  endDate: Date
+  totalInterest: number
+  totalToRepay: number
+}
+
+
+export type Dimension = "sector" | "gender" | "ageRange" | "projectType" | "maritalStatus" | "hasDisability"
+
+export type EnrichedProject = {
+  projectId: string
+  sector: string
+  gender: string
+  ageRange: string
+  projectType: string
+  maritalStatus: string
+  hasDisability: string
+  fundedAmount: number
+  totalIncome: number
+  totalExpense: number
+  netResult: number
+  isProfitable: boolean
+}
