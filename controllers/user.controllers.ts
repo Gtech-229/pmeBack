@@ -373,3 +373,13 @@ export const createAdmin = asyncHandler(async (req: AuthRequest, res: Response) 
   /* ================= RESPONSE ================= */
   res.status(201).json(adminUser)
 })
+
+
+export const savePushToken = asyncHandler(async (req: AuthRequest, res: Response) => {
+  const { token } = req.body
+  await prisma.user.update({
+    where: { id: req.user!.id },
+    data: { pushToken: token }
+  })
+  res.status(200).json({ message: 'Token saved' })
+})

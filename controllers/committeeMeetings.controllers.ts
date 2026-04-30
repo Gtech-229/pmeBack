@@ -842,7 +842,7 @@ if (op.newProjectStatus === 'funded') {
       // Activity
       await tx.activity.create({
         data: {
-          type: op.isApproved ? 'PROJECT_APPROVED' : 'PROJECT_REJECTED',
+          type: op.isApproved ? 'STEP_APPROVED' : 'STEP_REJECTED',
           title: op.isApproved
             ? 'Nouvelle étape validée'
             : 'Décision du comité concernant votre projet',

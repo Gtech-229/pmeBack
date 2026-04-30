@@ -13,6 +13,7 @@ import { generateCode } from "../utils/generateCode"
 import { resetPasswordTemplate } from "../utils/templates/emails/resetPassword.template"
 import { accountValidationTemplate } from "../utils/templates/emails/accountValidation.template"
 import { clearCookieOptions, clearSessionCookieOptions, getCookieOptions } from "../utils/cookiesOptions"
+import { sendPushNotification } from "../utils/sendPushNotifications"
 /**
  * @desc    Login user
  * @route   POST /api/auth/login
@@ -65,7 +66,7 @@ export const login = asyncHandler(async (req: Request, res: Response) => {
  res.cookie("refreshToken", refreshTkn, getCookieOptions(7 * 24 * 60 * 60 * 1000))
 
 res.cookie("jwt", token, getCookieOptions(15 * 60 * 1000))
-// In login controller alongside your other cookies
+
 res.cookie("hasSession", "1", {
   httpOnly: false,       
   secure: isProd,
@@ -94,7 +95,9 @@ export const logout = asyncHandler(async (req: AuthRequest, res: Response) => {
     res.status(401)
     throw new Error('You must be connected')
    }
-  const refreshTokenPlain = req.cookies.refreshToken
+  const refreshTokenPlain = req.cookies?.refreshToken || req.body.refreshToken
+
+
 
   if(!refreshTokenPlain){
     res.status(401)
@@ -307,7 +310,17 @@ export const refreshToken = asyncHandler(async (req: RefreshRequest, res: Respon
 
   res.cookie("jwt", accessToken, getCookieOptions(15 * 60 * 1000))
   res.cookie("refreshToken", newRefreshToken, getCookieOptions(7 * 24 * 60 * 60 * 1000))
-  res.status(200).json({ message: "Token refreshed" })
+  
+
+  // ── Return tokens in body for mobile ──────────────────────────────────
+  if (req.headers['x-client-type'] === 'mobile') {
+    res.status(200).json({
+      newAccessToken: accessToken,
+      newRefreshToken,
+    })
+  } else {
+    res.status(200).json({ message: "Token refreshed" })
+  }
 
  
 })
@@ -374,6 +387,36 @@ export const changePassword = asyncHandler(
         revokedAt: new Date()
       }
     })
+
+    // ── Notifications ──────────────────────────────────────────────────────
+const userWithToken = await prisma.user.findUnique({
+  where: { id: userId },
+  select: { pushToken: true }
+})
+
+const notifications: Promise<any>[] = [
+  prisma.activity.create({
+    data: {
+      type: 'PASSWORD_CHANGED',
+      title: 'Mot de passe modifié',
+      message: 'Votre mot de passe a été modifié avec succès. Si vous n\'êtes pas à l\'origine de cette action, contactez-nous immédiatement.',
+      userId,
+    }
+  })
+]
+
+if (userWithToken?.pushToken) {
+  notifications.push(
+    sendPushNotification(
+      userWithToken.pushToken,
+      'Mot de passe modifié 🔐',
+      'Votre mot de passe a été modifié. Si ce n\'est pas vous, contactez-nous.',
+      { type: 'PASSWORD_CHANGED' }
+    )
+  )
+}
+
+await Promise.allSettled(notifications)
 
     res.status(200).json({
       message: "Password updated successfully"
@@ -506,6 +549,31 @@ const user = await Promise.all(
     },
   })
 
+  // ── Notifications ──────────────────────────────────────────────────────
+const notifications: Promise<any>[] = [
+  prisma.activity.create({
+    data: {
+      type: 'PASSWORD_CHANGED',
+      title: 'Mot de passe réinitialisé',
+      message: 'Votre mot de passe a été réinitialisé avec succès.',
+      userId: user.id,
+    }
+  })
+]
+
+if (user.pushToken) {
+  notifications.push(
+    sendPushNotification(
+      user.pushToken,
+      'Mot de passe réinitialisé 🔐',
+      'Votre mot de passe a été réinitialisé. Si ce n\'est pas vous, contactez-nous immédiatement.',
+      { type: 'PASSWORD_CHANGED' }
+    )
+  )
+}
+
+await Promise.allSettled(notifications)
+
   res.status(200).json({
     message: "Mot de passe mis à jour avec succès",
     
@@ -632,6 +700,36 @@ export const verifyCode = asyncHandler(async (req : AuthRequest, res: Response) 
       codeExpires: null,
     },
   })
+
+  // ── Notifications ──────────────────────────────────────────────────────
+const notifications: Promise<any>[] = [
+  prisma.activity.create({
+    data: {
+      type: 'ACCOUNT_VERIFIED',
+      title: 'Email vérifié ✅',
+      message: 'Votre adresse email a été vérifiée avec succès.',
+      userId: user.id,
+    }
+  })
+]
+
+if (user.pushToken) {
+  notifications.push(
+    sendPushNotification(
+      user.pushToken,
+      'Email vérifié ✅',
+      'Votre adresse email a été vérifiée avec succès.',
+      { type: 'ACCOUNT_VERIFIED' }
+    )
+  )
+}
+
+await Promise.allSettled(notifications)
+
+res.status(200).json({
+  success: true,
+  message: 'Email vérifié avec succès',
+})
 
   res.status(200).json({
     success: true,

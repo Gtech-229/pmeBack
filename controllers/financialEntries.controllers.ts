@@ -4,6 +4,7 @@ import { Response } from "express";
 import { financialEntrySchema } from "../schemas/project.schema";
 import { prisma } from "../lib/prisma";
 import { uploadToCloudinary } from "../utils/UploadToCloudinary";
+import { sendPushNotification } from "../utils/sendPushNotifications";
 
 export const addFinancialEntry = asyncHandler(async (req: AuthRequest, res: Response) => {
   console.log(req.body)
@@ -72,6 +73,38 @@ export const addFinancialEntry = asyncHandler(async (req: AuthRequest, res: Resp
       size,
     }
   })
+
+  /* ---------------- ACTIVITY + NOTIFICATION ---------------- */
+const entryUser = await prisma.user.findUnique({
+  where: { id: req.user!.id },
+  select: { pushToken: true }
+})
+
+const isIncome = type === 'INCOME'
+
+const notifications: Promise<any>[] = [
+  prisma.activity.create({
+    data: {
+      type: 'PROJECT_UPDATE',
+      title: isIncome ? 'Revenu enregistré' : 'Dépense enregistrée',
+      message: `${isIncome ? 'Revenu' : 'Dépense'} de ${amount.toLocaleString('fr-FR')} enregistré${isIncome ? '' : 'e'} : ${label}.`,
+      userId: req.user!.id,
+    }
+  })
+]
+
+if (entryUser?.pushToken) {
+  notifications.push(
+    sendPushNotification(
+      entryUser.pushToken,
+      isIncome ? 'Revenu enregistré 💰' : 'Dépense enregistrée 📊',
+      `${label} — ${amount.toLocaleString('fr-FR')}`,
+      { projectId, type: 'PROJECT_UPDATE' }
+    )
+  )
+}
+
+await Promise.allSettled(notifications)
 
   // map to DTO shape
   res.status(201).json({

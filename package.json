@@ -43,6 +43,7 @@
     "ioredis": "^5.9.2",
     "jsonwebtoken": "^9.0.3",
     "multer": "^2.0.2",
+    "node-cron": "^4.2.1",
     "npm": "^11.7.0",
     "puppeteer": "^24.40.0",
     "rate-limit-redis": "^4.3.1",

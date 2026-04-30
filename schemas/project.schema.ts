@@ -73,9 +73,11 @@ export const createProjectBodySchema = z.object({
   description: z.string().min(20),
   sectorId : z.string().uuid().optional(),
 
-  requestedAmount: z.coerce
-    .number()
-    .min(0, "Montant demandé invalide"),
+  requestedAmount: z.preprocess(
+    normalizeNumber, 
+    z.number().positive("Entrez un montant valide")
+  ),
+   
 
   hasCredit: z.enum(["true", "false"]),
 

@@ -39,29 +39,28 @@ export const verifyAccessToken = (
   res: Response,
   next: NextFunction
 ) => {
-  const token = req.cookies?.jwt
- 
+  // check header first (mobile), fall back to cookie (web)
+  const authHeader = req.headers.authorization;
+  const token = authHeader?.startsWith('Bearer ')
+    ? authHeader.split(' ')[1]
+    : req.cookies?.jwt;
 
- 
-
-  if(!token){
-    res.status(401)
-    throw new Error("No token ")
+  if (!token) {
+    res.status(401);
+    throw new Error("No token");
   }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayLoads
-
+    const decoded = jwt.verify(token, JWT_SECRET) as JWTPayLoads;
     req.user = {
       id: decoded.id,
       role: decoded.role
-    }
-   
-    next()
+    };
+    next();
   } catch (error) {
-    return res.status(401).json({ message: "Invalid or expired access token" })
+    return res.status(401).json({ message: "Invalid or expired access token" });
   }
-}
+};
 
 
 

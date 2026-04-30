@@ -6,6 +6,8 @@ import { createCampaignSchema, createCampaignStepsSchema, updateCampaignStepSche
 import { CampaignStatus, Gender, MaritalStatus, ProjectType } from "../generated/prisma/enums"
 import { Prisma } from "../generated/prisma/client"
 import { CampaignWhereInput } from "../generated/prisma/models"
+import { sendBroadcastNotification, sendPushNotification } from "../utils/sendPushNotifications"
+import { createBroadcastActivity } from "../utils/createBroadCastActivity"
 
 /**
  * @description Get campaigns (paginated)
@@ -296,6 +298,8 @@ export const updateCampaign = asyncHandler(
       throw new Error("Au moins une etape est necessaire pour le lancement d'une campagne")
     }
 
+
+
     // Mise à jour
     const updatedCampaign = await prisma.campaign.update({
       where: { id},
@@ -306,6 +310,71 @@ export const updateCampaign = asyncHandler(
         targetProjects : Number(targetProjects)
       }
     })
+
+   
+  
+
+    const notifications: Promise<any>[] = []
+
+  // ── Campaign just opened ──────────────────────────────────────────────
+  if (campaign.status !== 'OPEN' && updatedCampaign.status === 'OPEN') {
+    notifications.push(
+      sendBroadcastNotification(
+        '🎯 Nouvelle campagne ouverte',
+        `La campagne "${updatedCampaign.name}" est maintenant ouverte aux projets`,
+        { campaignId: updatedCampaign.id, type: 'NEW_OPEN_CAMPAIGN' }
+      ),
+      createBroadcastActivity(
+        'NEW_OPEN_CAMPAIGN',
+        '🎯 Nouvelle campagne ouverte',
+        `La campagne "${updatedCampaign.name}" est maintenant disponible. Soumettez votre projet dès maintenant.`,
+        { campaignId: updatedCampaign.id }
+      )
+    )
+  }
+
+  // ── Campaign just closed ──────────────────────────────────────────────
+  if (campaign.status === 'OPEN' && updatedCampaign.status === 'CLOSED') {
+    // notify only users who submitted a project to this campaign
+    const affectedUsers = await prisma.user.findMany({
+      where: {
+        pme: {
+          projects: {
+            some: { campaignId: updatedCampaign.id }
+          }
+        },
+        pushToken: { not: null },
+        isActive: true,
+      },
+      select: { id: true, pushToken: true }
+    })
+
+    for (const u of affectedUsers) {
+      notifications.push(
+        prisma.activity.create({
+          data: {
+            type: 'CAMPAIGN_CLOSED',
+            title: 'Campagne clôturée',
+            message: `La campagne "${updatedCampaign.name}" à laquelle vous avez soumis un projet est maintenant clôturée.`,
+            userId: u.id,
+          }
+        })
+      )
+
+      if (u.pushToken) {
+        notifications.push(
+          sendPushNotification(
+            u.pushToken,
+            'Campagne clôturée 🔒',
+            `La campagne "${updatedCampaign.name}" est maintenant clôturée.`,
+            { campaignId: updatedCampaign.id, type: 'CAMPAIGN_CLOSED' }
+          )
+        )
+      }
+    }
+  }
+
+  await Promise.allSettled(notifications)
 
     res.status(200).json({
       message: "Campaign updated successfully",

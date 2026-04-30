@@ -3,25 +3,30 @@ import { AuthRequest } from "../types";
 import { Response } from "express";
 import { creditRepaymentSchema } from "../schemas/project.schema";
 import { prisma } from "../lib/prisma";
+import { uploadToCloudinary } from "../utils/UploadToCloudinary";
+import { sendPushNotification } from "../utils/sendPushNotifications";
 
 
 /**
  * @description Add a new repayment
  * @route  POST/credits/:creditId/repayments
  * @access Connected User
- * **/ 
+ **/
 export const addRepayment = asyncHandler(async (req: AuthRequest, res: Response) => {
-if(!req.user?.id){
+  if (!req.user?.id) {
     res.status(401)
     throw new Error("Unauthorized")
-}
+  }
 
   const { creditId } = req.params
 
-  if(!creditId){
+  if (!creditId) {
     res.status(400)
     throw new Error("L'id du credit est requis")
+    
   }
+
+  
 
   const parsed = creditRepaymentSchema.safeParse(req.body)
   if (!parsed.success) {
@@ -57,15 +62,42 @@ if(!req.user?.id){
     throw new Error(`Seulement (${credit.remainingBalance}) reste a payer`)
   }
 
-  // compute server-side fields
-  const remainingAfter = credit.remainingBalance - amountPaid
+  // ── Handle document upload ──────────────────────────────────────────────
+  let documentUrl: string | null = null
+  let documentName: string | null = null
+  let mimeType: string | null = null
+  let size: number | null = null
 
-  const expectedPaymentCount = credit.repayments.length + 1
-  const expectedDate = new Date(credit.startDate)
-  expectedDate.setMonth(expectedDate.getMonth() + expectedPaymentCount)
-  const isLate = new Date(paidAt) > expectedDate
+  const file = req.file // multer single file
 
-  // transaction — create repayment + update credit
+  if (file) {
+    const uploaded = await uploadToCloudinary(file) // your existing storage util
+    documentUrl = uploaded.url
+    documentName = (req.body.documentLabel as string) ?? file.originalname
+    mimeType = file.mimetype
+    size = file.size
+  }
+  // ───────────────────────────────────────────────────────────────────────
+
+ // ✅ Get actual total count separately
+const repaymentCount = await prisma.creditRepayment.count({
+  where: { creditId }
+})
+
+// compute server-side fields
+const remainingAfter = credit.remainingBalance - amountPaid
+
+// next payment number = how many already paid + 1
+const nextPaymentNumber = repaymentCount + 1
+const expectedDate = new Date(credit.startDate)
+expectedDate.setDate(1) // normalize day to avoid overflow
+expectedDate.setMonth(expectedDate.getMonth() + nextPaymentNumber)
+
+const isLate = new Date(paidAt) > expectedDate
+
+  
+
+ // ── Transaction result ────────────────────────────────────────────────
   const updated = await prisma.$transaction(async (tx) => {
     await tx.creditRepayment.create({
       data: {
@@ -75,6 +107,10 @@ if(!req.user?.id){
         remainingAfter,
         isLate,
         note: note ?? null,
+        documentUrl,
+        documentName,
+        mimeType,
+        size,
       }
     })
 
@@ -85,15 +121,106 @@ if(!req.user?.id){
         status: remainingAfter === 0 ? "COMPLETED" : "ACTIVE",
       },
       include: {
-        repayments: {
-          orderBy: { paidAt: 'desc' }
-        }
+        repayments: { orderBy: { paidAt: 'desc' } }
       }
     })
   })
 
+  // ── User ──────────────────────────────────────────────────────────────
+  const user = await prisma.user.findUnique({
+    where: { id: req.user.id },
+    select: { pushToken: true }
+  })
+
+  if (!user) {
+    res.status(404)
+    throw new Error('User not found')
+  }
+
+  // ── Notifications + activities (fire and forget — don't await all) ────
+  const notifications: Promise<any>[] = []
+
+  // 1 — repayment recorded
+  notifications.push(
+    prisma.activity.create({
+      data: {
+        type: 'REPAYMENT',
+        title: 'Remboursement enregistré',
+        message: `Remboursement de ${amountPaid.toLocaleString('fr-FR')} enregistré. Solde restant : ${remainingAfter.toLocaleString('fr-FR')}`,
+        userId: req.user.id,
+      }
+    })
+  )
+
+  if (user.pushToken) {
+    notifications.push(
+      sendPushNotification(
+        user.pushToken,
+        'Remboursement enregistré ✅',
+        `${amountPaid.toLocaleString('fr-FR')} enregistré. Solde restant : ${remainingAfter.toLocaleString('fr-FR')}`,
+        { creditId, type: 'REPAYMENT' }
+      )
+    )
+  }
+
+  // 2 — late payment
+  if (isLate) {
+    notifications.push(
+      prisma.activity.create({
+        data: {
+          type: 'REPAYMENT_LATE',
+          title: 'Remboursement en retard',
+          message: `Ce remboursement a été enregistré après la date prévue.`,
+          userId: req.user.id,
+        }
+      })
+    )
+
+    if (user.pushToken) {
+      notifications.push(
+        sendPushNotification(
+          user.pushToken,
+          'Remboursement en retard ⚠️',
+          `Votre remboursement a été enregistré en retard.`,
+          { creditId, type: 'REPAYMENT_LATE' }
+        )
+      )
+    }
+  }
+
+  // 3 — credit completed
+  if (remainingAfter === 0) {
+    notifications.push(
+      prisma.activity.create({
+        data: {
+          type: 'CREDIT_COMPLETED',
+          title: 'Crédit entièrement remboursé 🎉',
+          message: 'Félicitations ! Vous avez remboursé la totalité de ce crédit.',
+          userId: req.user.id,
+        }
+      })
+    )
+
+    if (user.pushToken) {
+      notifications.push(
+        sendPushNotification(
+          user.pushToken,
+          'Crédit soldé 🎉',
+          'Félicitations ! Vous avez remboursé la totalité de ce crédit.',
+          { creditId, type: 'CREDIT_COMPLETED' }
+        )
+      )
+    }
+  }
+
+  // Run all notifications in parallel — don't block the response
+  await Promise.allSettled(notifications)
+
   res.status(201).json(updated)
 })
+
+ 
+
 
 
 /**

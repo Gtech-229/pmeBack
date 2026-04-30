@@ -10,6 +10,7 @@ import { ProjectStatus, ProjectType } from '../generated/prisma/enums'
 import { Prisma, Project } from '../generated/prisma/client'
 import { getAgeFilter, getDateFilter } from '../utils/functions'
 import { computeCreditDetails } from '../utils/functions'
+import { sendPushNotification } from '../utils/sendPushNotifications'
 /**
  * @description Create new project
  * @route  POST/projects
@@ -25,6 +26,7 @@ export const createProject = asyncHandler(
       res.status(401)
       throw new Error("Unauthorized")
     }
+
 
     const user = await prisma.user.findUnique({
       where: { id: req.user.id },
@@ -259,18 +261,38 @@ if (credits && Array.isArray(credits) && credits.length > 0) {
 }
 
 
-    /* ---------------- ACTIVITY ---------------- */
+   
 
-    await prisma.activity.create({
-      data: {
-        type: "PROJECT_CREATED",
-        title: "Nouveau projet",
-        message:
-          "Votre projet a bien été soumis et est en attente de traitement. Vous serez informé des prochaines étapes.",
-        userId: req.user.id,
-        pmeId: user.pme.id
-      }
-    })
+    /* ---------------- ACTIVITY + NOTIFICATION ---------------- */
+const userWithToken = await prisma.user.findUnique({
+  where: { id: req.user.id },
+  select: { pushToken: true }
+})
+
+const notifications: Promise<any>[] = [
+  prisma.activity.create({
+    data: {
+      type: 'PROJECT_CREATED',
+      title: 'Projet soumis ✅',
+      message: `Votre projet "${title}" a bien été soumis et est en attente de traitement. Vous serez informé des prochaines étapes.`,
+      userId: req.user.id,
+      pmeId: user.pme.id
+    }
+  })
+]
+
+if (userWithToken?.pushToken) {
+  notifications.push(
+    sendPushNotification(
+      userWithToken.pushToken,
+      'Projet soumis ✅',
+      `Votre projet "${title}" a bien été soumis et est en attente de traitement.`,
+      { type: 'PROJECT_CREATED' }
+    )
+  )
+}
+
+await Promise.allSettled(notifications)
 
     /* ---------------- RESPONSE ---------------- */
 
@@ -682,6 +704,38 @@ export const updateProject = asyncHandler(async (req: AuthRequest, res: Response
       }
     }
   })
+
+  /* ---------------- ACTIVITY + NOTIFICATION ---------------- */
+const userWithToken = await prisma.user.findUnique({
+  where: { id: req.user.id },
+  select: { pushToken: true }
+})
+
+const updateNotifications: Promise<any>[] = [
+  prisma.activity.create({
+    data: {
+      type: 'PROJECT_UPDATE',
+      title: 'Projet mis à jour',
+      message: `Votre projet "${updated.title}" a été mis à jour avec succès.`,
+      userId: req.user.id,
+      pmeId: updated.pme.id
+    }
+  })
+]
+
+if (userWithToken?.pushToken) {
+  updateNotifications.push(
+    sendPushNotification(
+      userWithToken.pushToken,
+      'Projet mis à jour 📝',
+      `Votre projet "${updated.title}" a été mis à jour.`,
+      { projectId, type: 'PROJECT_UPDATE' }
+    )
+  )
+}
+
+await Promise.allSettled(updateNotifications)
+
 
   res.status(200).json(updated)
 })

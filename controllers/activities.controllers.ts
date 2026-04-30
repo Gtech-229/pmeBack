@@ -27,8 +27,6 @@ export const getActivities = asyncHandler(async(req : AuthRequest, res: Response
     title : true,
     type : true,
     message : true,
-    pme : true,
-    user : true,
     createdAt : true
    }
   })

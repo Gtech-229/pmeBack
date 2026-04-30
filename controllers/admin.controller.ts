@@ -9,108 +9,8 @@ import { Prisma } from "../generated/prisma/client";
 import { createPMESchema } from "./pme.controllers";
 import { createProjectBodySchema } from "../schemas/project.schema";
 import { computeCreditDetails } from "../utils/functions";
+import { sendPushNotification } from "../utils/sendPushNotifications";
 
-/**
- * @description Admin creates a PME for a user
- * @route POST /admin/pme/:userId
- * @access ADMIN | SUPER_ADMIN
- */
-// export const adminCreatePme = asyncHandler(async (req: AuthRequest, res: Response) => {
-//   /* ---------------- AUTH ---------------- */
-//   if (!req.user?.id || !["ADMIN", "SUPER_ADMIN"].includes(req.user.role)) {
-//     res.status(403)
-//     throw new Error("Accès refusé")
-//   }
-
-//   const { userId } = req.params
-
-//   if(!userId) {
-//     res.status(400)
-//     throw new Error("Id requis")
-//   }
-
-//   /* ---------------- USER CHECK ---------------- */
-//   const user = await prisma.user.findUnique({
-//     where: { id: userId },
-//     select: { id: true, role: true, pme: true }
-//   })
-
-//   if (!user) {
-//     res.status(404)
-//     throw new Error("Utilisateur introuvable")
-//   }
-
-//   if (user.role !== "PME") {
-//     res.status(400)
-//     throw new Error("L'utilisateur n'a pas le rôle PME")
-//   }
-
-//   if (user.pme) {
-//     res.status(409)
-//     throw new Error("Cet utilisateur possède déjà une organisation")
-//   }
-
-//   /* ---------------- VALIDATION ---------------- */
-//   const parsed = createPMESchema.safeParse(req.body)
-//   if (!parsed.success) {
-//     res.status(400)
-//     throw parsed.error
-//   }
-
-//   const data = parsed.data
-
-//   const hasAdministrative = data.administrative &&
-//     Object.keys(data.administrative).length > 0
-
-//   const location = hasAdministrative
-//     ? { administrative: data.administrative, city: null }
-//     : { administrative: {}, city: data.city }
-
-//   /* ---------------- TRANSACTION ---------------- */
-//   const pme = await prisma.$transaction(async (tx) => {
-//     const createdPme = await tx.pME.create({
-//       data: {
-//         ownerId: userId,
-//         name: data.name,
-//         phone: data.phone,
-//         address: data.address,
-//         email: data.email,
-//         description: data.description,
-//         type: data.type,
-//         size: data.size,
-//         country: data.country,
-//         administrative: location.administrative,
-//         city: location.city,
-//         activityField: data.activityField,
-//         userRole: data.userRole ?? "",
-//         isActive: true, // admin validates immediately
-//       }
-//     })
-
-//     await tx.user.update({
-//       where: { id: userId },
-//       data: {
-//         validatedAt: new Date(),
-//         isActive: true,
-//       }
-//     })
-
-//     await tx.activity.create({
-//       data: {
-//         type: "ACCOUNT_VERIFIED",
-//         title: "Compte Vérifié",
-//         message: "Votre organisation a été validée par un administrateur.",
-//         userId,
-//         pmeId: createdPme.id
-//       }
-//     })
-
-//     return createdPme
-//   })
-
-//   /* ---------------- RESPONSE ---------------- */
-//   res.status(201).json(pme)
-// })
 
 
 
@@ -297,7 +197,7 @@ if (campaign.type === "MONO_PROJECT") {
   }
 }
 
-/* ---------------- rest stays the same ---------------- */
+
   /* ---------------- FILES ---------------- */
   const files = req.files as Express.Multer.File[]
 
@@ -414,15 +314,43 @@ if (campaign.type === "MONO_PROJECT") {
   }
 
   /* ---------------- ACTIVITY ---------------- */
-  await prisma.activity.create({
+ // After the documents upload loop — replace existing activity block
+
+/* ---------------- NOTIFICATIONS + ACTIVITIES ---------------- */
+const targetUser = await prisma.user.findUnique({
+  where: { id: userId },
+  select: { pushToken: true }
+})
+
+const notifications: Promise<any>[] = []
+
+// PROJECT_CREATED activity
+notifications.push(
+  prisma.activity.create({
     data: {
-      type: "PROJECT_CREATED",
-      title: "Nouveau projet",
-      message: "Un projet a été soumis par un administrateur pour votre organisation.",
+      type: 'PROJECT_CREATED',
+      title: 'Nouveau projet soumis',
+      message: `Le projet "${title}" a été soumis par un administrateur pour votre organisation.`,
       userId,
       pmeId
     }
   })
+)
+
+if (targetUser?.pushToken) {
+  notifications.push(
+    sendPushNotification(
+      targetUser.pushToken,
+      'Nouveau projet soumis 📁',
+      `Le projet "${title}" a été soumis pour votre organisation.`,
+      { type: 'PROJECT_CREATED' }
+    )
+  )
+}
+
+
+
+await Promise.allSettled(notifications)
 
   /* ---------------- RESPONSE — full project for optimistic replace ---------------- */
   const fullProject = await prisma.project.findUnique({

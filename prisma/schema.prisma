@@ -46,10 +46,14 @@ model User {
   codeExpires           DateTime?
   codeIsVerified         Boolean  @default(false)
 
+   pushToken String?
+
   pme            PME?   
   activity          Activity[]  
   committeMember      CommitteeMember[]
    promoter Promoter?
+
+    
 
   @@index([role])
   @@index([isActive])
@@ -265,6 +269,7 @@ model Activity {
 
   userId    String
   user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  creditId  String?
 
   isRead    Boolean  @default(false)
   createdAt DateTime @default(now())
@@ -523,17 +528,21 @@ model ReportDocument {
 }
 
 model CreditRepayment {
-  id              String        @id @default(uuid())
-  creditId        String
-  credit          ProjectCredit @relation(fields: [creditId], references: [id], onDelete: Cascade)
-  amountPaid      Float
-  paidAt          DateTime
-  remainingAfter  Float         
-  isLate          Boolean       @default(false) 
-  note            String?
-  createdAt       DateTime      @default(now())
-}
+  id             String   @id @default(uuid())
+  creditId       String
+  amountPaid     Float
+  paidAt         DateTime
+  remainingAfter Float
+  isLate         Boolean  @default(false)
+  note           String?
+  documentUrl    String?
+  documentName   String?
+  mimeType       String?
+  size           Int?
+  createdAt      DateTime @default(now())
 
+  credit ProjectCredit @relation(fields: [creditId], references: [id])
+}
 
 
 
@@ -689,11 +698,40 @@ enum ProjectType {
 
 
 enum ActivityType {
+ 
   WELCOME
   PROJECT_CREATED
-  PROJECT_APPROVED
-  PROJECT_REJECTED
+  STEP_APPROVED
+  STEP_REJECTED
   ACCOUNT_VERIFIED
+  REPAYMENT
+  PROJECT_UPDATE
+ 
+
+  // ── Project lifecycle ─────────────────────
+  PROJECT_FUNDED          // project received funding — major milestone
+  PROJECT_COMPLETED       // project marked as completed
+  PROJECT_REJECTED        // project globally rejected
+
+
+
+  // ── Repayments ───────────────────────────
+  REPAYMENT_LATE          // payment overdue — urgent
+  REPAYMENT_REMINDER      // upcoming payment due in X days
+  CREDIT_COMPLETED        // credit fully repaid
+
+  // ── Disbursements ────────────────────────
+  DISBURSEMENT_SCHEDULED  // a tranche has been planned
+  DISBURSEMENT_CONFIRMED  // a tranche has been released
+
+  // ── Campaign ─────────────────────────────
+   NEW_OPEN_CAMPAIGN
+  CAMPAIGN_CLOSING_SOON   // campaign closes in X days
+  CAMPAIGN_CLOSED         // campaign user submitted to is now closed
+
+  // ── Account ──────────────────────────────
+  ACCOUNT_SUSPENDED       // account deactivated
+  PASSWORD_CHANGED        // security alert
 }
 
 

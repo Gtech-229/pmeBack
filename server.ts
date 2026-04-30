@@ -23,6 +23,7 @@ import financialEntriesRoutes from './routes/financialEntries.routes'
 import disbursementRoutes from './routes/disbursement.routes'
 import generalStatisticsRoutes from './routes/statistics.routes'
 import { createRateLimiter } from "./middlewares/ratelimit";
+import { startScheduledJobs } from "./cron/scheduledJobs";
 
 // Initialisations
 dotenv.config()
@@ -38,7 +39,7 @@ app.use(cookieParser());
 
 const allowedOrigins = process.env.NODE_ENV === 'production'
   ? ["https://suivi-mp.com", "https://admin.suivi-mp.com"]
-  : ["http://localhost:3000", "http://localhost:8081", "http://192.168.1.200:8081"];
+  : ["http://localhost:3000", "http://localhost:8081", "http://192.168.1.200:8081","http://192.168.1.199:8081" ];
 
 app.use(cors({
   origin: function(origin, callback){
@@ -77,6 +78,7 @@ app.use("/api/statistics/campaigns", generalStatisticsRoutes);
 
 
 app.use(errorHandler);
+startScheduledJobs()
 
 app.listen(port , ()=> console.log(`Server running on port ${port}`))
 

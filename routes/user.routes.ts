@@ -5,7 +5,8 @@ import {
   getUserById,
   getUsers,
   updateUser, 
-  createAdmin
+  createAdmin,
+  savePushToken
 } from "../controllers/user.controllers"
 import { Role } from "../generated/prisma/enums"
 import { requireAuth } from "../middlewares/requireAuth"
@@ -24,6 +25,9 @@ router
 
 router.route('/admin')
 .post(requireAuth, requireRole('SUPER_ADMIN'), createAdmin)
+
+router.route('/push-token')
+.post(savePushToken)
 
 
 
