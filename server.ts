@@ -78,7 +78,9 @@ app.use("/api/statistics/campaigns", generalStatisticsRoutes);
 
 
 app.use(errorHandler);
-startScheduledJobs()
 
-app.listen(port , ()=> console.log(`Server running on port ${port}`))
 
+app.listen(port, () => {
+  console.log(`Server running on port ${port}`)
+  startScheduledJobs() 
+})
